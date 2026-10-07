@@ -1,4 +1,4 @@
-"""Explicit profile aliases and reversible VS Code integration, without inference."""
+"""Reversible VS Code integration for physical models and AMIEBL profile agents."""
 from __future__ import annotations
 
 import copy
@@ -72,40 +72,42 @@ def read_jsonc(text):
 
 
 def model_entries(config):
+    """Expose only physical models to VS Code's model picker.
+
+    Profile selection is carried by generated .agent.md files instead of
+    multiplying every model into model::profile aliases. The aliases remain
+    supported by the HTTP API for other clients that need them.
+    """
     url = f"http://127.0.0.1:{config['api_port']}/v1/chat/completions"
     entries = []
     for model in config["models"]:
-        base = {"id": model["id"], "name": model["name"], "url": url,
-                "toolCalling": model.get("tool_calling", True),
-                "vision": bool(model.get("vision") and model.get("mmproj")),
-                "thinking": bool(model.get("reasoning_supported", True)), "streaming": True,
-                "contextWindow": model["context"]}
-        base["maxOutputTokens"] = min(max((p["max_tokens"] for p in config["profiles"]), default=4096),
-                                      max(1, model["context"]-1024))
+        entry = {"id": model["id"], "name": model["name"], "url": url,
+                 "toolCalling": model.get("tool_calling", True),
+                 "vision": bool(model.get("vision") and model.get("mmproj")),
+                 "thinking": bool(model.get("reasoning_supported", True)), "streaming": True,
+                 "contextWindow": model["context"]}
+        entry["maxOutputTokens"] = min(max((p["max_tokens"] for p in config["profiles"]), default=4096),
+                                       max(1, model["context"]-1024))
         # VS Code uses maxInputTokens/maxOutputTokens for BYOK capability
         # negotiation. Keep contextWindow for older clients, but also expose
         # the standard field so Agent Host does not guess an invalid budget.
-        base["maxInputTokens"] = max(1, model["context"] - base["maxOutputTokens"])
-        entries.append(base)
-        for profile in config["profiles"]:
-            entry = copy.deepcopy(base)
-            entry.update(id=f"{model['id']}::{profile['id']}",
-                         name=f"{model['name']} · {profile['name']}",
-                         maxOutputTokens=min(profile["max_tokens"], max(1, model["context"]-1024)))
-            entry["maxInputTokens"] = max(1, model["context"] - entry["maxOutputTokens"])
-            entries.append(entry)
+        entry["maxInputTokens"] = max(1, model["context"] - entry["maxOutputTokens"])
+        entries.append(entry)
     return entries
 
 
 def preview(config, data_dir):
     models_file, agents_dir = locations()
-    return {"ok": True, "model_count": len(model_entries(config)),
+    model_count = len(model_entries(config))
+    agent_count = len(config["profiles"])
+    return {"ok": True, "model_count": model_count, "agent_count": agent_count,
             "api_url": f"http://127.0.0.1:{config['api_port']}/v1/chat/completions",
             "models_file": str(models_file), "agents_dir": str(agents_dir),
             "default_model_id": config["default_model_id"],
-            "profiles": [{"id": p["id"], "name": p["name"], "max_tokens": p["max_tokens"]}
+            "profiles": [{"id": p["id"], "name": p["name"], "agent_name": p["agent_name"], "max_tokens": p["max_tokens"]}
                          for p in config["profiles"]],
-            "message": "更新本地模型及模式別名。由於 VS Code Agent Host 目前不穩定支援 customendpoint 的 agent 固定模型，agent 檔案不寫入 model 欄位，請在 Agent 視窗選取本機模型；原始檔案會先備份。"}
+            "summary": f"將在 VS Code 登錄 {model_count} 個實體模型，並依 AMIEBL 使用模式建立或更新 {agent_count} 個 Agent。原始設定會先備份；完成後需要重新載入 VS Code 視窗。",
+            "message": "VS Code 模型清單只會顯示實體模型；使用模式由 .agent.md 中的 AMIEBL profile 標記選擇。Agent 不固定 customendpoint model，請在 Agent 視窗的模型選擇器選取本機模型。"}
 
 
 def atomic_write(path, text):
@@ -148,6 +150,25 @@ def update_frontmatter(source, model_name=None):
     return "---\n" + header.replace("\r\n", "\n") + "\n---" + source[match.end():]
 
 
+def render_agent(profile):
+    tools = json.dumps(profile.get("agent_tools", []), ensure_ascii=False)
+    header = [
+        "---",
+        "name: " + json.dumps(profile["agent_name"], ensure_ascii=False),
+        "description: " + json.dumps(profile.get("agent_description", ""), ensure_ascii=False),
+        "tools: " + tools,
+        "agents: []",
+        "user-invocable: true",
+        "disable-model-invocation: true",
+        "---",
+        "",
+        f"AMIEBL_PROFILE:{profile['id']}",
+        "",
+        profile["agent_instructions"].strip(),
+        "",
+    ]
+    return "\n".join(header)
+
 def apply(config, data_dir):
     models_file, agents_dir = locations()
     original = models_file.read_text(encoding="utf-8-sig") if models_file.exists() else "[]"
@@ -169,30 +190,16 @@ def apply(config, data_dir):
     if default is None:
         raise ValueError("請先指定有效的預設模型。")
     outputs = [(models_file, json.dumps(providers, ensure_ascii=False, indent=4)+"\n")]
-    descriptions = {
-        "quick-chat": ("Local Quick Chat", "Fast local-model chat for questions and explanations.", "[web]",
-                       "Answer the user's question directly and concisely. Do not claim to inspect, change, or run anything."),
-        "coding": ("Local Coding", "Focused local coding assistant.", "[execute, read, edit, search, web]",
-                   "Work directly on the user's requested coding task. Make focused changes and verify the result."),
-        "deep-coding": ("Local Deep Coding", "Deep analysis for difficult coding tasks.", "[execute, read, edit, search, web]",
-                        "Perform deep analysis before acting on difficult coding tasks. Investigate root causes and verify conclusions.")}
     for profile in config["profiles"]:
         profile_id = profile["id"]
         if not re.fullmatch(r"[a-zA-Z0-9_-]+", profile_id):
             raise ValueError("模式 ID 只能含英文字母、數字、連字號與底線。")
-        filename = f"local-{profile_id}.agent.md" if profile_id in descriptions else f"lmm-{profile_id}.agent.md"
+        # Keep the historical filenames for the three built-in profiles so
+        # existing installations are updated in place. Custom profiles use
+        # an AMIEBL-owned filename derived from their immutable profile ID.
+        filename = f"local-{profile_id}.agent.md" if profile_id in {"quick-chat", "coding", "deep-coding"} else f"lmm-{profile_id}.agent.md"
         agent_path = agents_dir / filename
-        if agent_path.exists():
-            source = agent_path.read_text(encoding="utf-8-sig")
-        else:
-            name, description, tool_list, instruction = descriptions.get(profile_id,
-                (profile["name"], "Local Model Manager custom profile.", "[read, search, web]", "Answer the user's request clearly and use the available tools only as needed."))
-            source = f"---\nname: {json.dumps(name, ensure_ascii=False)}\ndescription: {json.dumps(description)}\ntools: {tool_list}\nagents: []\nuser-invocable: true\ndisable-model-invocation: true\n---\n\n{instruction}\n"
-        # Do not pin `model:` here. VS Code Agent Host currently rejects
-        # customendpoint models referenced from .agent.md. The profile prompt
-        # remains in the file and the manager can infer quick/coding/deep when
-        # the user selects the local model in the Agent Host model picker.
-        outputs.append((agent_path, update_frontmatter(source, None)))
+        outputs.append((agent_path, render_agent(profile)))
     backup_dir = Path(data_dir) / "backups" / (dt.datetime.now().strftime("%Y%m%d-%H%M%S-%f")+"-vscode")
     backup_dir.mkdir(parents=True, exist_ok=True)
     backups = []
@@ -215,5 +222,6 @@ def apply(config, data_dir):
                 atomic_write(path, previous_bytes.decode("utf-8-sig"))
         raise
     return {"ok": True, "backups": backups, "model_count": len(entries),
+            "agent_count": len(outputs) - 1,
             "agents": [str(p) for p, _ in outputs[1:]], "requires_reload": True,
-            "message": "已備份並更新 VS Code 設定。Agent 檔案未固定 customendpoint model，請完整重新啟動 VS Code，並在 Agent 視窗的模型選擇器選取本機模型後再執行 Local agent。"}
+            "message": "已備份並更新 VS Code 設定。模型選單只保留實體模型；各 Agent 會透過 AMIEBL_PROFILE 標記選擇使用模式。Agent 不固定 customendpoint model，請重新載入 VS Code，並在模型選擇器選取本機模型。"}
