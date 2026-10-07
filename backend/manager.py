@@ -91,7 +91,7 @@ def default_config() -> dict:
             "log_retention_days": 7, "vscode_abort_watch": True,
             "models": [{"id": "qwen3.8-27b-local", "name": "Qwen3.8 27B", "path": str(model_path),
                         "mmproj": projector_value, "vision": bool(projector_value and Path(projector_value).is_file()), "context": 65536, "gpu_layers": 17,
-                        "auto_fit": True, "fit_target_mib": 2048, "cache_type": "q4_0", "mtp": True, "mtp_draft_max": None,
+                        "auto_fit": True, "fit_target_enabled": False, "fit_target_mib": 2048, "cache_type": "q4_0", "mtp": True, "mtp_draft_max": None,
                         "keep_loaded": False, "idle_minutes": None, "default_profile_id": "coding",
                         "temperature": None, "top_p": None, "top_k": None, "min_p": None,
                         "reasoning_supported": True, "reasoning_efforts": ["low", "medium", "xhigh"]}],
@@ -165,8 +165,12 @@ def validate_config(value: Any) -> dict:
     if c["models"] and c["default_model_id"] not in ids["models"]:
         raise ValueError("預設模型不存在。")
     for m in c["models"]:
+        # Older configs always passed --fit-target explicitly. Preserve that
+        # behavior during migration; newly created models default to llama.cpp.
+        if "fit_target_enabled" not in m:
+            m["fit_target_enabled"] = True
         conservative = {"mmproj": "", "vision": False, "context": 8192, "gpu_layers": 0,
-                        "auto_fit": True, "fit_target_mib": 2048, "cache_type": "f16", "mtp": False, "mtp_draft_max": None,
+                        "auto_fit": True, "fit_target_enabled": False, "fit_target_mib": 2048, "cache_type": "f16", "mtp": False, "mtp_draft_max": None,
                         "keep_loaded": False, "idle_minutes": None, "default_profile_id": c["default_profile_id"],
                         "temperature": None, "top_p": None, "top_k": None, "min_p": None,
                         "reasoning_supported": False, "reasoning_efforts": []}
@@ -176,7 +180,7 @@ def validate_config(value: Any) -> dict:
             raise ValueError("請指定模型檔案。")
         if not isinstance(m["mmproj"], str):
             raise ValueError("視覺模型路徑必須是文字。")
-        for key in ("vision", "auto_fit", "mtp", "keep_loaded", "reasoning_supported"):
+        for key in ("vision", "auto_fit", "fit_target_enabled", "mtp", "keep_loaded", "reasoning_supported"):
             if not isinstance(m[key], bool):
                 raise ValueError(f"{key} 必須是開啟或關閉。")
         if m["vision"] and not m["mmproj"]:
@@ -433,7 +437,12 @@ class Manager:
         if not fit.is_file():
             raise ValueError("找不到 llama-fit-params.exe；請選擇完整引擎資料夾，或關閉自動 GPU 分配。")
         cmd = [str(fit), "-m", model["path"], "-c", str(model["context"]), "-ctk", model["cache_type"],
-               "-ctv", model["cache_type"], "--fit-target", str(model["fit_target_mib"])]
+               "-ctv", model["cache_type"]]
+        # Omit --fit-target unless the user explicitly overrides it, so
+        # llama-fit-params can use llama.cpp's native default (currently
+        # 1024 MiB per device) and follow future upstream default changes.
+        if model.get("fit_target_enabled", False):
+            cmd += ["--fit-target", str(model["fit_target_mib"])]
         # Keep this invocation aligned with interactive-start.ps1. The
         # current llama-fit-params binary does not accept --mmproj; the
         # projector is passed to llama-server after the layer count is known.
