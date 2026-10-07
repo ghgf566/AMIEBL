@@ -20,6 +20,7 @@ import unittest
 from pathlib import Path
 
 import httpx
+import importlib.util
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -319,6 +320,18 @@ class ManagerIntegration(unittest.TestCase):
         self.assertEqual(self.events("post")[-1]["body"]["max_tokens"], 2048)
         self.assertEqual({x["profile_id"] for x in self.records()}, {"quick-chat"})
 
+    def test_vscode_preserve_mode_keeps_manual_tools_and_prompt(self):
+        spec = importlib.util.spec_from_file_location("vscode_integration_test", ROOT / "backend" / "vscode_integration.py")
+        module = importlib.util.module_from_spec(spec)
+        assert spec.loader is not None
+        spec.loader.exec_module(module)
+        source = "---\nname: Custom Coding\ntools: [read]\ncustom-field: keep-me\n---\n\nAMIEBL_PROFILE:old-profile\n\nMy hand edited prompt.\n"
+        result = module.preserve_agent_profile_marker(source, "coding")
+        self.assertIn("tools: [read]", result)
+        self.assertIn("custom-field: keep-me", result)
+        self.assertIn("My hand edited prompt.", result)
+        self.assertIn("AMIEBL_PROFILE:coding", result)
+        self.assertNotIn("AMIEBL_PROFILE:old-profile", result)
     def test_vscode_preview_exposes_physical_models_and_profile_agents(self):
         r = self.client.get("/manager/vscode/preview")
         self.assertEqual(r.status_code, 200, r.text)
