@@ -44,12 +44,12 @@ public partial class MainWindow
         {
             if (!await LeaveEditor()) return;
             string id = "profile-" + Guid.NewGuid().ToString("N")[..8];
-            await SaveConfig(c => J.A(c, "profiles").Add(new JsonObject { ["id"] = id, ["name"] = "新的使用模式", ["thinking_mode"] = "auto", ["effort"] = "medium", ["thinking_budget"] = 1536, ["max_tokens"] = 8192 }));
+            await SaveConfig(c => J.A(c, "profiles").Add(new JsonObject { ["id"] = id, ["name"] = "新的使用模式", ["thinking_mode"] = "auto", ["effort"] = "medium", ["thinking_budget"] = 1536, ["max_tokens"] = 8192, ["agent_name"] = "新的使用模式", ["agent_description"] = "AMIEBL local-model agent.", ["agent_tools"] = new JsonArray("read", "search", "web"), ["agent_instructions"] = "Answer the user's request clearly and use the available tools only as needed." }));
             ShowPage("使用模式");
             SelectProfile(id);
         }, true)));
         left.Children.Add(Text("切換使用模式會調整每次請求，不需要重新載入模型。", 12, true));
-        left.Children.Add(Text("Agent 可透過「模型識別::模式識別」明確指定模式。", 12, true));
+        left.Children.Add(Text("VS Code Agent 會由「連接 VS Code」依這裡的設定產生；其他客戶端仍可使用「模型識別::模式識別」指定模式。", 12, true));
         if (list.Items.Count > 0) list.SelectedIndex = 0;
         else editor.Content = Text("先新增一個使用模式。", 18);
         grid.Tag = list;
@@ -89,6 +89,14 @@ public partial class MainWindow
             };
         }
         mode.SelectionChanged += (_, _) => RefreshSummary(); RefreshSummary();
+
+        var agent = Section("VS Code Agent", "這裡是輸出給 VS Code 的 Agent 設定。儲存後按「連接 VS Code」即可建立或更新 .agent.md；AMIEBL 會自動加入模式識別標記。");
+        var agentName = Field(agent, "Agent 顯示名稱", J.S(profile, "agent_name", J.S(profile, "name")));
+        var agentDescription = Field(agent, "Agent 說明", J.S(profile, "agent_description", "AMIEBL local-model agent."));
+        var agentTools = Field(agent, "可用工具（以逗號分隔）", string.Join(", ", J.A(profile, "agent_tools").Select(x => x?.ToString()).Where(x => !string.IsNullOrWhiteSpace(x))));
+        var agentInstructions = MultiLineField(agent, "Agent 行為指令", J.S(profile, "agent_instructions", "Answer the user's request clearly and use the available tools only as needed."), 150);
+        agent.Children.Add(Text("例如：read, edit, search, execute, web。工具名稱會原樣寫入 VS Code Agent frontmatter；思考預算與生成上限仍由上方 AMIEBL 使用模式控制。", 11, true));
+        panel.Children.Add(Card(agent));
         async Task Save()
         {
             var changed = Clone(profile);
@@ -96,8 +104,12 @@ public partial class MainWindow
             int budgetValue = Number(budget, "思考預算", 0, 1_000_000), maxValue = Number(max, "整次生成上限", 256, 1_000_000);
             if (Value(mode) is "auto" or "on" && budgetValue > maxValue - 256) throw new InvalidOperationException("整次生成上限需至少比思考預算多 256 tokens，為回答與工具呼叫保留空間。");
             changed["thinking_budget"] = budgetValue; changed["max_tokens"] = maxValue;
+            changed["agent_name"] = Required(agentName, "Agent 顯示名稱");
+            changed["agent_description"] = agentDescription.Text.Trim();
+            changed["agent_tools"] = new JsonArray(agentTools.Text.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Distinct(StringComparer.OrdinalIgnoreCase).Select(x => (JsonNode?)JsonValue.Create(x)).ToArray());
+            changed["agent_instructions"] = Required(agentInstructions, "Agent 行為指令");
             await SaveConfig(c => { var profiles = J.A(c, "profiles"); int index = profiles.ToList().FindIndex(x => J.S(x, "id") == id); if (index < 0) throw new InvalidOperationException("此模式已被移除，請重新開啟使用模式頁。"); profiles[index] = changed; });
-            ShowNotice("使用模式已儲存，新的請求會套用設定。");
+            ShowNotice("使用模式已儲存。AMIEBL 請求會立即套用；VS Code Agent 請按「連接 VS Code」同步。");
         }
         pendingSave = Save;
         panel.Children.Add(ActionRow(Button("儲存使用模式", Save, true), Button("複製此模式", async () =>
@@ -117,7 +129,7 @@ public partial class MainWindow
                 foreach (var model in J.A(c, "models").OfType<JsonObject>()) if (J.S(model, "default_profile_id") == id) model["default_profile_id"] = fallback;
             }); ShowPage("使用模式");
         })));
-        var note = Section("和 Agent 的配合", "客戶端明確指定的思考控制會優先保留；若客戶端指定更低的輸出上限，也會遵守較低的上限。管理器會顯示最後採用的值。");
+        var note = Section("和 Agent 的配合", "VS Code 會用 Agent 內的 AMIEBL_PROFILE 標記選擇此模式；其他客戶端仍可透過 X-LLM-Profile 或「模型::模式」指定。客戶端明確指定的思考控制與較低輸出上限仍會優先保留。");
         panel.Children.Add(Card(note));
         return Card(panel);
     }
