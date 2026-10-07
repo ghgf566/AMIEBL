@@ -320,6 +320,22 @@ public partial class MainWindow : Window
         panel.Children.Add(container);
         return input;
     }
+    private TextBox MultiLineField(StackPanel panel, string label, string value, double minHeight = 120)
+    {
+        panel.Children.Add(Text(label, 12, true));
+        var input = new TextBox
+        {
+            Text = value,
+            AcceptsReturn = true,
+            TextWrapping = TextWrapping.Wrap,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            MinHeight = minHeight
+        };
+        input.TextChanged += (_, _) => dirty = true;
+        panel.Children.Add(input);
+        return input;
+    }
     private CheckBox Check(StackPanel panel, string label, bool value)
     {
         var input = new CheckBox { Content = label, IsChecked = value }; input.Checked += (_, _) => dirty = true; input.Unchecked += (_, _) => dirty = true; panel.Children.Add(input); return input;
