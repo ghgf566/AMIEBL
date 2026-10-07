@@ -157,6 +157,11 @@ class ManagerIntegration(unittest.TestCase):
         profiles[0].update(thinking_mode="auto", **changes)
         self.save(profiles=profiles)
 
+    def test_legacy_fit_target_is_preserved_as_explicit_override(self):
+        config = self.get("/manager/config")
+        model = next(x for x in config["models"] if x["id"] == "test-model")
+        self.assertTrue(model["fit_target_enabled"])
+        self.assertEqual(model["fit_target_mib"], 2048)
     def test_observation_and_scan_do_not_load_model(self):
         for _ in range(2):
             self.assertEqual(self.client.get("/health").status_code, 200)
