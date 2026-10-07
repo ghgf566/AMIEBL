@@ -44,7 +44,7 @@ public partial class MainWindow
         {
             if (!await LeaveEditor()) return;
             string id = "profile-" + Guid.NewGuid().ToString("N")[..8];
-            await SaveConfig(c => J.A(c, "profiles").Add(new JsonObject { ["id"] = id, ["name"] = "新的使用模式", ["thinking_mode"] = "auto", ["effort"] = "medium", ["thinking_budget"] = 1536, ["max_tokens"] = 8192, ["agent_name"] = "新的使用模式", ["agent_description"] = "AMIEBL local-model agent.", ["agent_tools"] = new JsonArray("read", "search", "web"), ["agent_instructions"] = "Answer the user's request clearly and use the available tools only as needed." }));
+            await SaveConfig(c => J.A(c, "profiles").Add(new JsonObject { ["id"] = id, ["name"] = "新的使用模式", ["thinking_mode"] = "auto", ["effort"] = "medium", ["thinking_budget"] = 1536, ["max_tokens"] = 8192, ["agent_name"] = "新的使用模式", ["agent_description"] = "AMIEBL local-model agent.", ["agent_tools"] = new JsonArray(JsonValue.Create("read"), JsonValue.Create("search"), JsonValue.Create("web")), ["agent_instructions"] = "Answer the user's request clearly and use the available tools only as needed." }));
             ShowPage("使用模式");
             SelectProfile(id);
         }, true)));
@@ -106,7 +106,7 @@ public partial class MainWindow
             changed["thinking_budget"] = budgetValue; changed["max_tokens"] = maxValue;
             changed["agent_name"] = Required(agentName, "Agent 顯示名稱");
             changed["agent_description"] = agentDescription.Text.Trim();
-            changed["agent_tools"] = new JsonArray(agentTools.Text.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Distinct(StringComparer.OrdinalIgnoreCase).Select(x => (JsonNode?)JsonValue.Create(x)).ToArray());
+            changed["agent_tools"] = new JsonArray(agentTools.Text.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Where(x => x.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).Select(x => (JsonNode?)JsonValue.Create(x)).ToArray());
             changed["agent_instructions"] = Required(agentInstructions, "Agent 行為指令");
             await SaveConfig(c => { var profiles = J.A(c, "profiles"); int index = profiles.ToList().FindIndex(x => J.S(x, "id") == id); if (index < 0) throw new InvalidOperationException("此模式已被移除，請重新開啟使用模式頁。"); profiles[index] = changed; });
             ShowNotice("使用模式已儲存。AMIEBL 請求會立即套用；VS Code Agent 請按「連接 VS Code」同步。");
