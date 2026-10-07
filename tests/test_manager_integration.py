@@ -241,34 +241,37 @@ class ManagerIntegration(unittest.TestCase):
         forwarded = self.events("post")[-1]["body"]
         self.assertLessEqual(forwarded.get("max_tokens", forwarded.get("max_completion_tokens")), 180)
 
-    def test_auto_classifier_is_bounded_tool_free_and_can_disable_thinking(self):
+
+    def test_auto_classifier_is_local_and_can_disable_thinking(self):
         self.load()
-        self.control(decision={"thinking": False, "enable_thinking": False, "effort": "low", "reasoning_effort": "low",
-                               "budget": 0, "thinking_budget": 0, "reason": "simple greeting"})
         self.auto_profile()
-        response = self.completion("hello", tools=[{"type": "function", "function": {"name": "example", "parameters": {"type": "object"}}}])
+        response = self.completion(
+            "你好",
+            tools=[{"type": "function", "function": {"name": "example", "parameters": {"type": "object"}}}],
+        )
         self.assertEqual(response.status_code, 200, response.text)
-        classified = self.events("classifier")
-        self.assertEqual(len(classified), 1)
-        classifier = classified[0]["body"]
-        self.assertFalse(classifier.get("tools"))
-        self.assertFalse(classifier.get("stream", False))
-        self.assertGreater(classifier["max_tokens"], 0)
-        self.assertLessEqual(classifier["max_tokens"], 256)
-        self.assertFalse(classifier["chat_template_kwargs"]["enable_thinking"])
+        self.assertEqual(self.events("classifier"), [], "Auto routing must not call the model a second time")
+        self.assertEqual(len(self.events("post")), 1)
         forwarded = self.events("post")[-1]["body"]
         self.assertFalse(forwarded["chat_template_kwargs"]["enable_thinking"])
         self.assertTrue(forwarded["tools"])
-        self.assertEqual(len(self.events("post")), 2)
-
-    def test_auto_classifier_cannot_exceed_profile_or_total_generation_budget(self):
-        self.load()
-        self.control(decision={"thinking": True, "enable_thinking": True, "effort": "xhigh", "reasoning_effort": "xhigh",
-                               "budget": 100000, "thinking_budget": 100000, "reason": "complex"})
-        self.auto_profile(thinking_budget=512)
-        response = self.completion("analyze difficult task", max_tokens=300)
-        self.assertEqual(response.status_code, 200, response.text)
         rec = eventually(lambda: next((x for x in self.records() if x["phase"] == "completed"), None))
+        self.assertEqual(rec["decision"], "自動判斷：直接回答")
+        self.assertIsNotNone(rec["classifier_seconds"])
+        self.assertLess(rec["classifier_seconds"], 0.1)
+
+
+    def test_auto_classifier_uses_profile_ceiling_for_complex_tasks(self):
+        self.load()
+        self.auto_profile(thinking_budget=512)
+        response = self.completion("分析這個 Python race condition 為什麼會造成 deadlock", max_tokens=300)
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(self.events("classifier"), [])
+        self.assertEqual(len(self.events("post")), 1)
+        forwarded = self.events("post")[-1]["body"]
+        self.assertTrue(forwarded["chat_template_kwargs"]["enable_thinking"])
+        rec = eventually(lambda: next((x for x in self.records() if x["phase"] == "completed"), None))
+        self.assertEqual(rec["decision"], "自動判斷：需要思考")
         self.assertEqual(rec["max_tokens"], 300)
         self.assertGreaterEqual(rec["thinking_budget"], 0)
         self.assertLess(rec["thinking_budget"], 300, "Final answer must retain generation space")
@@ -310,20 +313,20 @@ class ManagerIntegration(unittest.TestCase):
         self.assertGreaterEqual(r.status_code, 400, r.text)
         self.assertEqual(self.events("start"), [])
 
-    def test_invalid_classifier_falls_back_without_retrying_answer(self):
+
+    def test_auto_classifier_ambiguous_request_uses_profile_default(self):
         self.load()
-        with httpx.Client(trust_env=False) as c:
-            c.post(self.engine_base + "/__control", json={"classifier": "invalid"})
-        profiles = copy.deepcopy(self.config["profiles"])
-        profiles[0]["thinking_mode"] = "auto"
-        self.save(profiles=profiles)
-        r = self.completion("analyze a bug")
-        self.assertEqual(r.status_code, 200, r.text)
-        self.assertEqual(len(self.events("classifier")), 1)
-        self.assertEqual(len(self.events("post")), 2)
+        self.auto_profile()
+        response = self.completion("介紹一下章魚")
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(self.events("classifier"), [])
+        self.assertEqual(len(self.events("post")), 1)
+        forwarded = self.events("post")[-1]["body"]
+        self.assertTrue(forwarded["chat_template_kwargs"]["enable_thinking"])
         rec = eventually(lambda: next((x for x in self.records() if x["phase"] == "completed"), None))
-        self.assertIsNotNone(rec["classifier_seconds"])
+        self.assertEqual(rec["decision"], "自動判斷：採用模式預設")
         self.assertEqual(rec["effort"], "medium")
+        self.assertEqual(rec["thinking_budget"], 1536)
 
     def test_cancel_queued_request_never_reaches_engine(self):
         with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
@@ -375,21 +378,26 @@ class ManagerIntegration(unittest.TestCase):
         rec = eventually(lambda: next((x for x in self.records() if x["phase"] == "cancelled"), None))
         self.assertTrue(rec["cancel_confirmed"])
 
-    def test_cancel_during_classifier_never_sends_answer_request(self):
+
+    def test_auto_classifier_ignores_agent_system_keywords(self):
         self.load()
-        self.control(classifier_delay=8)
         self.auto_profile()
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-            job = pool.submit(self.completion, "classify this request")
-            eventually(lambda: bool(self.events("classifier")))
-            rec = eventually(lambda: next((x for x in self.records() if x["phase"] == "classifying"), None))
-            response = self.api("POST", f"/manager/requests/{rec['id']}/cancel", json={})
-            self.assertEqual(response.status_code, 200, response.text)
-            job.result(timeout=4)
-        cancelled = eventually(lambda: next((x for x in self.records() if x["phase"] == "cancelled"), None))
-        self.assertTrue(cancelled["cancel_confirmed"])
+        body = {
+            "model": "test-model",
+            "messages": [
+                {"role": "system", "content": "Always perform debugging, planning, architecture analysis and root cause investigation."},
+                {"role": "user", "content": "hello"},
+            ],
+            "stream": False,
+        }
+        response = self.client.post("/v1/chat/completions", json=body)
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(self.events("classifier"), [])
         self.assertEqual(len(self.events("post")), 1)
-        eventually(lambda: self.get("/manager/status")["active_count"] == 0)
+        forwarded = self.events("post")[-1]["body"]
+        self.assertFalse(forwarded["chat_template_kwargs"]["enable_thinking"])
+        rec = eventually(lambda: next((x for x in self.records() if x["phase"] == "completed"), None))
+        self.assertEqual(rec["decision"], "自動判斷：直接回答")
 
     def test_client_disconnection_cancels_active_stream(self):
         with self.client.stream("POST", "/v1/chat/completions", json={"model": "test-model", "messages": [{"role": "user", "content": "FAKE_SLOW disconnected"}], "stream": True}) as response:
