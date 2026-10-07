@@ -559,35 +559,96 @@ class Manager:
         if not ticket.upstream_sent or not self.engine_base:
             ticket.record["cancel_confirmed"] = True
             return
-        # A pre-header DELETE may race engine registration. Repeat after a short
-        # delay and verify slot idleness before allowing the next queued request.
+
+        # DELETE may arrive before llama.cpp has fully registered the request.
+        # Retry first, then give the single slot a reasonable grace period to
+        # become idle before falling back to terminating the owned engine.
         success = False
+
         for attempt in range(3):
             try:
-                response = await self.http.delete(self.engine_base + "/v1/stream", params={"conv_id": ticket.upstream_id}, timeout=2)
+                response = await self.http.delete(
+                    self.engine_base + "/v1/stream",
+                    params={"conv_id": ticket.upstream_id},
+                    timeout=2,
+                )
                 success = 200 <= response.status_code < 300
-                if success and (ticket.upstream_headers or attempt >= 1):
-                    break
             except httpx.HTTPError:
-                pass
+                success = False
+
+            # Before response headers, a successful DELETE can still have raced
+            # request registration. Always replay at least once in that case.
+            if success and (ticket.upstream_headers or attempt >= 1):
+                break
+
             await asyncio.sleep(0.15 * (attempt + 1))
+
         if success:
+            deadline = time.monotonic() + 3.0
+            replay_at = time.monotonic() + 0.5
+
+            while time.monotonic() < deadline:
+                try:
+                    slots = (
+                        await self.http.get(
+                            self.engine_base + "/slots",
+                            timeout=1,
+                        )
+                    ).json()
+
+                    if not isinstance(slots, list):
+                        # /slots unsupported: a successful DELETE is our best
+                        # available confirmation.
+                        break
+
+                    if not any(s.get("is_processing") for s in slots):
+                        ticket.record["cancel_confirmed"] = True
+                        return
+
+                    # The original DELETE may have raced request registration.
+                    # Replay occasionally while waiting for the slot to drain.
+                    if time.monotonic() >= replay_at:
+                        try:
+                            await self.http.delete(
+                                self.engine_base + "/v1/stream",
+                                params={"conv_id": ticket.upstream_id},
+                                timeout=2,
+                            )
+                        except httpx.HTTPError:
+                            pass
+                        replay_at = time.monotonic() + 0.5
+
+                except (httpx.HTTPError, ValueError, TypeError):
+                    # If DELETE itself succeeded but /slots cannot be queried,
+                    # preserve the old fallback semantics.
+                    ticket.record["cancel_confirmed"] = True
+                    return
+
+                await asyncio.sleep(0.2)
+
+            # One final check after the grace period.
             try:
-                slots = (await self.http.get(self.engine_base + "/slots", timeout=1)).json()
-                if isinstance(slots, list) and any(s.get("is_processing") for s in slots):
-                    await asyncio.sleep(0.15)
-                    slots = (await self.http.get(self.engine_base + "/slots", timeout=1)).json()
-                    success = not any(s.get("is_processing") for s in slots)
+                slots = (
+                    await self.http.get(
+                        self.engine_base + "/slots",
+                        timeout=1,
+                    )
+                ).json()
+
+                if isinstance(slots, list) and not any(
+                    s.get("is_processing") for s in slots
+                ):
+                    ticket.record["cancel_confirmed"] = True
+                    return
             except (httpx.HTTPError, ValueError, TypeError):
-                # DELETE confirmation is the fallback if slots are unsupported.
-                pass
-        if not success:
-            # We own this single-slot child. Stopping it gives a verifiable
-            # cancellation and avoids orphan inference consuming all later jobs.
-            self.log("引擎未確認取消，正在停止本管理器擁有的模型進程。")
-            await self.unload()
-            success = True
-        ticket.record["cancel_confirmed"] = success
+                ticket.record["cancel_confirmed"] = True
+                return
+
+        # Last-resort safety net. The manager owns this single-slot llama-server,
+        # so killing it is preferable to leaving orphan inference consuming GPU.
+        self.log("引擎在取消寬限時間後仍未停止，正在停止本管理器擁有的模型進程。")
+        await self.unload()
+        ticket.record["cancel_confirmed"] = True
 
     async def interruptible(self, awaitable, ticket):
         operation = asyncio.ensure_future(awaitable)
@@ -1025,6 +1086,8 @@ class Manager:
         partial = ""
         discovery_at = 0
         initial = True
+        replay_bytes = 16 * 1024
+
         def discover():
             try:
                 candidates = []
@@ -1036,40 +1099,146 @@ class Manager:
                 return max(candidates, default=(0, None))[1]
             except OSError:
                 return None
+
         while not self.stopping.is_set():
             try:
                 if self.config.get("vscode_abort_watch", True) and os.environ.get("VSCODE_ABORT_LOG_WATCH", "1") != "0":
                     if time.monotonic() >= discovery_at:
                         candidate = await asyncio.to_thread(discover)
                         discovery_at = time.monotonic() + 5
+
                         if candidate != watched:
                             watched = candidate
-                            offset = watched.stat().st_size if watched else 0
-                            # Baseline new files too: stale aborts from another
-                            # window must never cancel a newly submitted task.
                             partial = ""
+
+                            if watched:
+                                size = watched.stat().st_size
+
+                                # 啟動時不重播舊 Abort，避免舊紀錄取消新任務。
+                                # 但 VS Code 執行期間建立/輪替的新 log 要回讀尾端，
+                                # 否則 Abort 可能在下一次 discovery 前就已經寫入而被漏掉。
+                                if initial:
+                                    offset = size
+                                else:
+                                    offset = max(0, size - replay_bytes)
+                            else:
+                                offset = 0
+
                         initial = False
+
                     if watched:
                         size = watched.stat().st_size
+
                         if size < offset:
-                            offset = 0
+                            # 同一路徑被 truncate / rotate，也回讀少量尾端。
+                            offset = max(0, size - replay_bytes)
+                            partial = ""
+
                         if size > offset:
                             with watched.open("rb") as f:
                                 f.seek(offset)
                                 raw = f.read(64 * 1024)
+
                             offset += len(raw)
-                            lines = (partial + raw.decode("utf-8", errors="replace")).splitlines(keepends=True)
-                            partial = lines.pop() if lines and not lines[-1].endswith(("\n", "\r")) else ""
+
+                            lines = (
+                                partial + raw.decode("utf-8", errors="replace")
+                            ).splitlines(keepends=True)
+
+                            partial = (
+                                lines.pop()
+                                if lines and not lines[-1].endswith(("\n", "\r"))
+                                else ""
+                            )
+
                             for line in lines:
-                                if any(p in line.lower() for p in ("aborting session", "cancelling session", "canceling session", "session aborted", "abort session")):
-                                    # Legacy side channel lacks request identity.
-                                    # Apply only if exactly one live request exists.
-                                    live = list(self.tickets.values())
-                                    if len(live) == 1:
-                                        self.log("偵測到 VS Code 停止訊號，取消目前唯一的任務。")
-                                        self.cancel_ticket(live[0])
+                                matched = next(
+                                    (
+                                        p
+                                        for p in (
+                                            "aborting session",
+                                            "cancelling session",
+                                            "canceling session",
+                                            "session aborted",
+                                            "abort session",
+                                        )
+                                        if p in line.lower()
+                                    ),
+                                    None,
+                                )
+
+                                if matched:
+                                    ticket = self.active
+
+                                    if (
+                                        ticket
+                                        and not ticket.done.is_set()
+                                        and not ticket.cancel.is_set()
+                                    ):
+                                        event_time = None
+
+                                        # VS Code logs use local time, e.g.
+                                        # 2026-10-08 04:52:27.707 [info] ...
+                                        match = re.match(
+                                            r"^(\d{4}-\d{2}-\d{2} "
+                                            r"\d{2}:\d{2}:\d{2}(?:\.\d+)?)",
+                                            line,
+                                        )
+
+                                        if match:
+                                            try:
+                                                event_time = dt.datetime.fromisoformat(
+                                                    match.group(1)
+                                                )
+                                            except ValueError:
+                                                pass
+            
+                                        accept = True
+
+                                        if event_time is not None:
+                                            try:
+                                                started_utc = dt.datetime.fromisoformat(
+                                                    ticket.record["started_at"]
+                                                )           
+
+                                                started_local = (
+                                                    started_utc
+                                                    .astimezone()
+                                                    .replace(tzinfo=None)
+                                                )
+
+                                                # An Abort written before this request existed
+                                                # cannot possibly belong to this request.
+                                                if event_time < started_local:
+                                                    accept = False
+
+                                                # Tail replay only needs to recover a few seconds
+                                                # around log discovery. Reject clearly stale events.
+                                                now_local = dt.datetime.now()
+
+                                                if (
+                                                    now_local - event_time
+                                                    > dt.timedelta(seconds=10)
+                                                ):
+                                                    accept = False
+
+                                            except (ValueError, TypeError, KeyError):
+                                                pass
+
+                                        if accept:
+                                            self.log(
+                                                f"偵測到 VS Code 停止訊號 "
+                                                f"({matched})，取消目前執行中的任務。"
+                                            )
+                                            self.cancel_ticket(ticket)
+
             except OSError:
                 watched = None
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                self.log(f"VS Code 停止訊號監看失敗：{type(exc).__name__}。")
+
             await asyncio.sleep(0.3)
 
 
