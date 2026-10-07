@@ -114,18 +114,21 @@ def profile_agent_defaults(profile_id: str, name: str) -> dict:
     presets = {
         "quick-chat": {
             "agent_name": "Local Quick Chat",
+            "agent_sync_mode": "preserve",
             "agent_description": "Fast local-model chat for questions and explanations.",
             "agent_tools": ["web"],
             "agent_instructions": "Answer the user's question directly and concisely. Do not claim to inspect, change, or run anything.",
         },
         "coding": {
             "agent_name": "Local Coding",
+            "agent_sync_mode": "preserve",
             "agent_description": "Focused local coding assistant.",
             "agent_tools": ["execute", "read", "edit", "search", "web"],
             "agent_instructions": "Work directly on the user's requested coding task. Make focused changes and verify the result.",
         },
         "deep-coding": {
             "agent_name": "Local Deep Coding",
+            "agent_sync_mode": "preserve",
             "agent_description": "Deep analysis for difficult coding tasks.",
             "agent_tools": ["execute", "read", "edit", "search", "web"],
             "agent_instructions": "Perform deep analysis before acting on difficult coding tasks. Investigate root causes and verify conclusions.",
@@ -133,6 +136,7 @@ def profile_agent_defaults(profile_id: str, name: str) -> dict:
     }
     return copy.deepcopy(presets.get(profile_id, {
         "agent_name": name,
+        "agent_sync_mode": "preserve",
         "agent_description": "AMIEBL local-model agent.",
         "agent_tools": ["read", "search", "web"],
         "agent_instructions": "Answer the user's request clearly and use the available tools only as needed.",
@@ -190,6 +194,8 @@ def validate_config(value: Any) -> dict:
         number(p.get("thinking_budget"), "思考預算", 0, 1048576, True)
         if p["thinking_budget"] >= p["max_tokens"] and p["thinking_mode"] != "off":
             raise ValueError("思考預算必須小於總生成上限，為回答保留空間。")
+        if p.get("agent_sync_mode") not in ("preserve", "managed"):
+            raise ValueError("無效的 VS Code Agent 同步方式。")
         if not isinstance(p.get("agent_name"), str) or not p["agent_name"].strip():
             raise ValueError("VS Code Agent 名稱不可留白。")
         if len(p["agent_name"]) > 200:
