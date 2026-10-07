@@ -44,7 +44,7 @@ public partial class MainWindow
         {
             if (!await LeaveEditor()) return;
             string id = "profile-" + Guid.NewGuid().ToString("N")[..8];
-            await SaveConfig(c => J.A(c, "profiles").Add(new JsonObject { ["id"] = id, ["name"] = "新的使用模式", ["thinking_mode"] = "auto", ["effort"] = "medium", ["thinking_budget"] = 1536, ["max_tokens"] = 8192, ["agent_name"] = "新的使用模式", ["agent_description"] = "AMIEBL local-model agent.", ["agent_tools"] = new JsonArray(JsonValue.Create("read"), JsonValue.Create("search"), JsonValue.Create("web")), ["agent_instructions"] = "Answer the user's request clearly and use the available tools only as needed." }));
+            await SaveConfig(c => J.A(c, "profiles").Add(new JsonObject { ["id"] = id, ["name"] = "新的使用模式", ["thinking_mode"] = "auto", ["effort"] = "medium", ["thinking_budget"] = 1536, ["max_tokens"] = 8192, ["agent_sync_mode"] = "preserve", ["agent_name"] = "新的使用模式", ["agent_description"] = "AMIEBL local-model agent.", ["agent_tools"] = new JsonArray(JsonValue.Create("read"), JsonValue.Create("search"), JsonValue.Create("web")), ["agent_instructions"] = "Answer the user's request clearly and use the available tools only as needed." }));
             ShowPage("使用模式");
             SelectProfile(id);
         }, true)));
@@ -90,12 +90,25 @@ public partial class MainWindow
         }
         mode.SelectionChanged += (_, _) => RefreshSummary(); RefreshSummary();
 
-        var agent = Section("VS Code Agent", "這裡是輸出給 VS Code 的 Agent 設定。儲存後按「連接 VS Code」即可建立或更新 .agent.md；AMIEBL 會自動加入模式識別標記。");
-        var agentName = Field(agent, "Agent 顯示名稱", J.S(profile, "agent_name", J.S(profile, "name")));
-        var agentDescription = Field(agent, "Agent 說明", J.S(profile, "agent_description", "AMIEBL local-model agent."));
-        var agentTools = Field(agent, "可用工具（以逗號分隔）", string.Join(", ", J.A(profile, "agent_tools").Select(x => x?.ToString()).Where(x => !string.IsNullOrWhiteSpace(x))));
-        var agentInstructions = MultiLineField(agent, "Agent 行為指令", J.S(profile, "agent_instructions", "Answer the user's request clearly and use the available tools only as needed."), 150);
-        agent.Children.Add(Text("例如：read, edit, search, execute, web。工具名稱會原樣寫入 VS Code Agent frontmatter；思考預算與生成上限仍由上方 AMIEBL 使用模式控制。", 11, true));
+        var agent = Section("VS Code Agent", "第一次沒有 Agent 檔時會由 AMIEBL 建立；之後可選擇保留 VS Code 手動修改，或由 AMIEBL 完整管理。");
+        var agentSync = Choice(agent, "同步方式", J.S(profile, "agent_sync_mode", "preserve"),
+            ("preserve", "保留 VS Code 手動設定 · 推薦"),
+            ("managed", "由 AMIEBL 完整管理 · 每次同步覆寫"));
+        var agentSyncHint = Text("", 11, true);
+        agent.Children.Add(agentSyncHint);
+        void RefreshAgentSyncHint()
+        {
+            agentSyncHint.Text = Value(agentSync) == "managed"
+                ? "完整管理：每次按「連接 VS Code」都會用下方名稱、工具與行為指令重建此 Agent。"
+                : "保留手動設定：若 Agent 已存在，AMIEBL 只維護 AMIEBL_PROFILE 標記；tools、prompt 與其他 VS Code 設定都不覆寫。下方欄位僅用於第一次建立 Agent。";
+        }
+        agentSync.SelectionChanged += (_, _) => RefreshAgentSyncHint();
+        RefreshAgentSyncHint();
+        var agentName = Field(agent, "Agent 顯示名稱 / 初次建立值", J.S(profile, "agent_name", J.S(profile, "name")));
+        var agentDescription = Field(agent, "Agent 說明 / 初次建立值", J.S(profile, "agent_description", "AMIEBL local-model agent."));
+        var agentTools = Field(agent, "可用工具 / 初次建立值（以逗號分隔）", string.Join(", ", J.A(profile, "agent_tools").Select(x => x?.ToString()).Where(x => !string.IsNullOrWhiteSpace(x))));
+        var agentInstructions = MultiLineField(agent, "Agent 行為指令 / 初次建立值", J.S(profile, "agent_instructions", "Answer the user's request clearly and use the available tools only as needed."), 150);
+        agent.Children.Add(Text("工具越多，VS Code 需要送進模型的工具描述通常也越多，可能增加輸入 token 與首輪處理時間。思考預算與生成上限仍由上方 AMIEBL 使用模式控制。", 11, true));
         panel.Children.Add(Card(agent));
         async Task Save()
         {
@@ -104,12 +117,13 @@ public partial class MainWindow
             int budgetValue = Number(budget, "思考預算", 0, 1_000_000), maxValue = Number(max, "整次生成上限", 256, 1_000_000);
             if (Value(mode) is "auto" or "on" && budgetValue > maxValue - 256) throw new InvalidOperationException("整次生成上限需至少比思考預算多 256 tokens，為回答與工具呼叫保留空間。");
             changed["thinking_budget"] = budgetValue; changed["max_tokens"] = maxValue;
+            changed["agent_sync_mode"] = Value(agentSync);
             changed["agent_name"] = Required(agentName, "Agent 顯示名稱");
             changed["agent_description"] = agentDescription.Text.Trim();
             changed["agent_tools"] = new JsonArray(agentTools.Text.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Where(x => x.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).Select(x => (JsonNode?)JsonValue.Create(x)).ToArray());
             changed["agent_instructions"] = Required(agentInstructions, "Agent 行為指令");
             await SaveConfig(c => { var profiles = J.A(c, "profiles"); int index = profiles.ToList().FindIndex(x => J.S(x, "id") == id); if (index < 0) throw new InvalidOperationException("此模式已被移除，請重新開啟使用模式頁。"); profiles[index] = changed; });
-            ShowNotice("使用模式已儲存。AMIEBL 請求會立即套用；VS Code Agent 請按「連接 VS Code」同步。");
+            ShowNotice(Value(agentSync) == "managed" ? "使用模式已儲存。下次「連接 VS Code」會依 GUI 覆寫此 Agent。" : "使用模式已儲存。下次「連接 VS Code」只會維護模式標記，既有 VS Code Agent 的手動工具與指令會保留。");
         }
         pendingSave = Save;
         panel.Children.Add(ActionRow(Button("儲存使用模式", Save, true), Button("複製此模式", async () =>
