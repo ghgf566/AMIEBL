@@ -311,8 +311,21 @@ class ManagerIntegration(unittest.TestCase):
                              json={"model": "test-model", "messages": [{"role": "user", "content": "header mode"}]})
         self.assertEqual(r.status_code, 200, r.text)
         self.assertEqual(self.events("post")[-1]["body"]["max_tokens"], 2048)
+        r = self.client.post("/v1/chat/completions",
+                             json={"model": "test-model", "messages": [
+                                 {"role": "system", "content": "AMIEBL_PROFILE:quick-chat\nAgent instructions."},
+                                 {"role": "user", "content": "marker mode"}]})
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(self.events("post")[-1]["body"]["max_tokens"], 2048)
         self.assertEqual({x["profile_id"] for x in self.records()}, {"quick-chat"})
 
+    def test_vscode_preview_exposes_physical_models_and_profile_agents(self):
+        r = self.client.get("/manager/vscode/preview")
+        self.assertEqual(r.status_code, 200, r.text)
+        body = r.json()
+        self.assertEqual(body["model_count"], 1)
+        self.assertEqual(body["agent_count"], 2)
+        self.assertTrue(all("agent_name" in p for p in body["profiles"]))
     def test_unknown_model_is_rejected_without_loading(self):
         r = self.completion(model="not-a-real-model")
         self.assertGreaterEqual(r.status_code, 400, r.text)
