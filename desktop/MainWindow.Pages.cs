@@ -70,8 +70,8 @@ public partial class MainWindow
         var panel = Section("使用模式設定", "思考預算是上限，模型可以提早結束。每次請求會顯示實際套用結果。");
         var name = Field(panel, "顯示名稱", J.S(profile, "name"));
         Field(panel, "模式識別（供 Agent 指定）", id, true);
-        var mode = Choice(panel, "思考策略", J.S(profile, "thinking_mode", "auto"), ("auto", "自動判斷 · 由管理器選擇"), ("on", "固定開啟思考"), ("off", "固定關閉思考"), ("model", "跟隨模型預設"));
-        var effort = Choice(panel, "思考程度／自動判斷的程度上限", J.S(profile, "effort", "medium"), ("low", "簡短 · low"), ("medium", "均衡 · medium"), ("xhigh", "深入 · xhigh"));
+        var mode = Choice(panel, "思考策略", J.S(profile, "thinking_mode", "auto"), ("auto", "自動判斷 · 本機快速規則"), ("on", "固定開啟思考"), ("off", "固定關閉思考"), ("model", "跟隨模型預設"));
+        var effort = Choice(panel, "思考程度／自動模式上限", J.S(profile, "effort", "medium"), ("low", "簡短 · low"), ("medium", "均衡 · medium"), ("xhigh", "深入 · xhigh"));
         var budget = Field(panel, "思考預算上限（tokens）", J.S(profile, "thinking_budget", "1536"));
         var max = Field(panel, "整次生成上限（包含思考與回答）", J.S(profile, "max_tokens", "8192"));
         var summary = Text("", 12, true);
@@ -82,7 +82,7 @@ public partial class MainWindow
             effort.IsEnabled = controls; budget.IsEnabled = controls;
             summary.Text = Value(mode) switch
             {
-                "auto" => "管理器先用一次短請求判斷是否需要思考，再執行正式任務。會增加少量等待時間；分類失敗時使用此模式預設值。",
+                "auto" => "管理器只檢查最近的使用者要求，以本機規則快速判斷是否開啟思考，不會額外呼叫模型。明確的問候、翻譯與改寫會直接回答；除錯、分析、規劃等任務會使用此模式的思考程度與預算；無法明確分類時採用此模式預設。",
                 "off" => "要求支援此功能的模型直接回答。未支援思考開關的模型會保留原本行為。",
                 "model" => "沿用模型模板的預設行為，不代表每一題都自動開關思考。",
                 _ => "使用指定的思考程度與預算；實際可用程度取決於該模型的能力設定。"
@@ -171,7 +171,7 @@ public partial class MainWindow
         text.AppendLine("生成速度  " + J.Metric(request, "generation_tps", " tok/s"));
         text.AppendLine().AppendLine("本次思考策略");
         text.AppendLine("判斷結果  " + DecisionName(J.S(request, "decision", "未提供")));
-        text.AppendLine("判斷耗時  " + J.Metric(request, "classifier_seconds", " 秒"));
+        text.AppendLine("策略判斷耗時  " + J.Metric(request, "classifier_seconds", " 秒"));
         text.AppendLine("思考程度  " + J.S(request, "effort", "未指定"));
         text.AppendLine("思考預算  " + J.Metric(request, "thinking_budget", " tokens", "0"));
         text.AppendLine("思考用量  " + J.Metric(request, "thinking_tokens", " tokens", "0"));
