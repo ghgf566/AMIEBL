@@ -104,9 +104,9 @@ def preview(config, data_dir):
             "api_url": f"http://127.0.0.1:{config['api_port']}/v1/chat/completions",
             "models_file": str(models_file), "agents_dir": str(agents_dir),
             "default_model_id": config["default_model_id"],
-            "profiles": [{"id": p["id"], "name": p["name"], "agent_name": p["agent_name"], "max_tokens": p["max_tokens"]}
+            "profiles": [{"id": p["id"], "name": p["name"], "agent_name": p["agent_name"], "agent_sync_mode": p.get("agent_sync_mode", "preserve"), "max_tokens": p["max_tokens"]}
                          for p in config["profiles"]],
-            "summary": f"將在 VS Code 登錄 {model_count} 個實體模型，並依 AMIEBL 使用模式建立或更新 {agent_count} 個 Agent。原始設定會先備份；完成後需要重新載入 VS Code 視窗。",
+            "summary": f"將在 VS Code 登錄 {model_count} 個實體模型，並處理 {agent_count} 個 Agent。預設只維護 AMIEBL 模式標記並保留 VS Code 手動修改；設為完整管理的 Agent 才會由 GUI 覆寫。原始設定會先備份；完成後需要重新載入 VS Code 視窗。",
             "message": "VS Code 模型清單只會顯示實體模型；使用模式由 .agent.md 中的 AMIEBL profile 標記選擇。Agent 不固定 customendpoint model，請在 Agent 視窗的模型選擇器選取本機模型。"}
 
 
@@ -149,6 +149,18 @@ def update_frontmatter(source, model_name=None):
             header += "\n" + line
     return "---\n" + header.replace("\r\n", "\n") + "\n---" + source[match.end():]
 
+
+def preserve_agent_profile_marker(source, profile_id):
+    """Preserve the user's VS Code agent settings and only maintain AMIEBL's marker."""
+    source = source.lstrip("\ufeff")
+    marker = f"AMIEBL_PROFILE:{profile_id}"
+    pattern = r"(?mi)^[ \t]*AMIEBL_PROFILE\s*:\s*[A-Za-z0-9_-]+[ \t]*$"
+    if re.search(pattern, source):
+        return re.sub(pattern, marker, source, count=1)
+    match = re.match(r"^---\s*\r?\n.*?\r?\n---(?=\r?\n|$)", source, re.S)
+    if not match:
+        raise ValueError("既有 VS Code Agent 缺少有效 YAML 標頭；為避免覆蓋手動設定，已停止同步。")
+    return source[:match.end()] + "\n\n" + marker + source[match.end():]
 
 def render_agent(profile):
     tools = json.dumps(profile.get("agent_tools", []), ensure_ascii=False)
@@ -200,7 +212,12 @@ def apply(config, data_dir):
         # an AMIEBL-owned filename derived from their immutable profile ID.
         filename = f"local-{profile_id}.agent.md" if profile_id in {"quick-chat", "coding", "deep-coding"} else f"lmm-{profile_id}.agent.md"
         agent_path = agents_dir / filename
-        outputs.append((agent_path, render_agent(profile)))
+        if agent_path.exists() and profile.get("agent_sync_mode", "preserve") == "preserve":
+            source = agent_path.read_text(encoding="utf-8-sig")
+            content = preserve_agent_profile_marker(source, profile_id)
+        else:
+            content = render_agent(profile)
+        outputs.append((agent_path, content))
     backup_dir = Path(data_dir) / "backups" / (dt.datetime.now().strftime("%Y%m%d-%H%M%S-%f")+"-vscode")
     backup_dir.mkdir(parents=True, exist_ok=True)
     backups = []
@@ -225,4 +242,4 @@ def apply(config, data_dir):
     return {"ok": True, "backups": backups, "model_count": len(entries),
             "agent_count": len(outputs) - 1,
             "agents": [str(p) for p, _ in outputs[1:]], "requires_reload": True,
-            "message": "已備份並更新 VS Code 設定。模型選單只保留實體模型；各 Agent 會透過 AMIEBL_PROFILE 標記選擇使用模式。Agent 不固定 customendpoint model，請重新載入 VS Code，並在模型選擇器選取本機模型。"}
+            "message": "已備份並更新 VS Code 設定。模型選單只保留實體模型；預設同步模式只維護 AMIEBL_PROFILE 標記並保留既有 Agent 的 tools、prompt 與其他手動設定。只有設為「由 AMIEBL 完整管理」的 Agent 會被 GUI 覆寫。請重新載入 VS Code。"}
