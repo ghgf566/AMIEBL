@@ -1,0 +1,19 @@
+<Window x:Class="LocalModelManager.MainWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Title="Local Model Manager" Width="1240" Height="860" MinWidth="1000" MinHeight="700" WindowStartupLocation="CenterScreen">
+ <Grid Background="#111827">
+  <Grid.ColumnDefinitions><ColumnDefinition Width="210"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+  <Border Background="#0C1322" BorderBrush="#253147" BorderThickness="0,0,1,0">
+   <DockPanel Margin="20,28,16,22">
+    <StackPanel DockPanel.Dock="Top" Margin="9,0,0,30"><TextBlock Text="◈" FontSize="32" Foreground="{StaticResource Accent}"/><TextBlock Text="LOCAL MODEL" FontSize="17" FontWeight="Bold" Margin="0,9,0,3"/><TextBlock Text="你的本地推理工作台" FontSize="12" Foreground="{StaticResource Muted}"/></StackPanel>
+    <StackPanel DockPanel.Dock="Bottom" Margin="9,0,0,0"><TextBlock x:Name="SidebarStatus" Text="●  正在連接服務" Foreground="{StaticResource Accent}" FontSize="12"/><TextBlock Text="所有推理都在本機進行" Foreground="{StaticResource Muted}" FontSize="11" Margin="0,9,0,0"/><TextBlock Text="v1.0  ·  llama.cpp" Foreground="#63748E" FontSize="11" Margin="0,5,0,0"/></StackPanel>
+    <StackPanel x:Name="Navigation"/>
+   </DockPanel>
+  </Border>
+  <Grid Grid.Column="1" Margin="32,28,32,22">
+   <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+   <DockPanel Margin="0,0,0,23"><StackPanel><TextBlock x:Name="PageEyebrow" Text="WORKSPACE" Foreground="{StaticResource Accent}" FontSize="11" FontWeight="SemiBold"/><TextBlock x:Name="PageTitle" Text="總覽" FontSize="28" FontWeight="SemiBold" Margin="0,6,0,0"/><TextBlock x:Name="PageSubtitle" Text="正在啟動本機背景服務…" Foreground="{StaticResource Muted}" Margin="0,8,0,0"/></StackPanel></DockPanel>
+   <Border x:Name="MessageBoxArea" Grid.Row="1" Background="#203B41" BorderBrush="#366267" BorderThickness="1" CornerRadius="8" Padding="13" Margin="0,0,0,16" Visibility="Collapsed"><DockPanel><Button DockPanel.Dock="Right" Content="×" Padding="6,0" Margin="12,0,0,0" Click="DismissMessage"/><TextBlock x:Name="MessageText" VerticalAlignment="Center"/></DockPanel></Border>
+   <ContentControl x:Name="PageContent" Grid.Row="2" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"/>
+   <TextBlock x:Name="Footer" Grid.Row="3" Text="設定保存在本機 · 視窗關閉後可繼續背景待命" FontSize="11" Foreground="#7E8FA7" Margin="0,16,0,0"/>
+  </Grid>
+ </Grid>
+</Window>

@@ -1,0 +1,66 @@
+﻿# =========================
+# .NET / WPF
+# =========================
+**/bin/
+**/obj/
+.vs/
+*.user
+*.suo
+
+# =========================
+# Python
+# =========================
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+
+# =========================
+# Test generated output
+# =========================
+tests/.runs/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# =========================
+# Build / release output
+# =========================
+build/
+dist/
+publish/
+release/
+outputs/
+portable/
+
+# =========================
+# Models
+# =========================
+models/
+*.gguf
+*.safetensors
+
+# =========================
+# Logs / temp
+# =========================
+logs/
+*.log
+tmp/
+temp/
+*.tmp
+
+# =========================
+# Local configuration / secrets
+# =========================
+.env
+.env.*
+settings.local.json
+
+# =========================
+# OS junk
+# =========================
+Thumbs.db
+Desktop.ini
+.DS_Store
