@@ -185,7 +185,8 @@ def apply(config, data_dir):
     owned_file = Path(data_dir) / "vscode-owned-models.json"
     previous = set(json.loads(owned_file.read_text(encoding="utf-8"))) if owned_file.exists() else set()
     owned = {entry["id"] for entry in entries}
-    provider["models"] = [m for m in provider.get("models", []) if m.get("id") not in owned | previous] + entries
+    legacy_aliases = {f"{model['id']}::{profile['id']}" for model in config["models"] for profile in config["profiles"]}
+    provider["models"] = [m for m in provider.get("models", []) if m.get("id") not in owned | previous | legacy_aliases] + entries
     default = next((m for m in config["models"] if m["id"] == config["default_model_id"]), None)
     if default is None:
         raise ValueError("請先指定有效的預設模型。")
