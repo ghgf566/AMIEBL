@@ -280,7 +280,7 @@ public partial class MainWindow
                 ? "設定已儲存。新的 Agent 連線埠會在完全結束並重新開啟後生效，Agent 的 API 位址也需更新。"
                 : (oldEnginePort != privatePort || !string.Equals(oldEngine, engineValue, StringComparison.OrdinalIgnoreCase))
                     ? "系統設定已儲存。llama.cpp 引擎位置／模型引擎連接埠會在下一個推理請求前自動重新載入模型，或可手動重新載入。"
-                    : "系統設定已儲存。啟動相關設定會在下次開啟時生效。");
+                    : "系統設定已儲存。閒置、預設模式、紀錄與關閉行為等即時項目已套用；背景啟動與預載設定於下次開啟時生效。");
         }
         pendingSave = Save;
         root.Children.Add(ActionRow(Button("儲存系統設定", Save, true), Button("完全結束管理器", RequestExit)));
@@ -314,10 +314,20 @@ public partial class MainWindow
         if (dialog.ShowDialog(this) != true) return;
         var imported = JsonNode.Parse(await File.ReadAllTextAsync(dialog.FileName))?.AsObject() ?? throw new InvalidOperationException("設定檔格式無法辨識。");
         bool wantsStartup = J.B(imported, "auto_start");
+        bool previousStartup = J.B(config, "auto_start");
         if (!Confirm("匯入會替換目前設定，原設定會由服務備份。模型檔案不會移動。" + (wantsStartup ? "\n此設定包含登入 Windows 後自動啟動。" : ""))) return;
         await api!.Post("/manager/import", imported); config = await api.Get("/manager/config");
-        SetAutoStart(J.B(config, "auto_start")); dirty = false;
-        ShowPage("系統"); ShowNotice("設定已匯入。新的載入參數於下次載入生效；連接埠與啟動行為於重新啟動後生效。");
+        try { SetAutoStart(J.B(config, "auto_start")); }
+        catch (Exception ex)
+        {
+            await SaveConfig(c => c["auto_start"] = previousStartup);
+            try { SetAutoStart(previousStartup); } catch { }
+            throw new InvalidOperationException("設定內容已匯入，但登入自動啟動無法套用，因此已還原該項：" + ex.Message);
+        }
+        dirty = false; await Poll();
+        ShowPage("系統"); ShowNotice(J.B(status, "pending_restart")
+            ? "設定已匯入。Agent 連線埠需完全結束並重新開啟後生效；模型載入參數會在下次推理前重新載入。"
+            : "設定已匯入。即時項目已套用；若有模型載入參數變更，下一次推理會先重新載入。");
     }
 
     private static void OpenFolder(string path) => Process.Start(new ProcessStartInfo("explorer.exe") { UseShellExecute = true, ArgumentList = { path } });
