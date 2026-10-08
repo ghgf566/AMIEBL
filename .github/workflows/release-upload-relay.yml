@@ -27,5 +27,6 @@ jobs:
       - name: Reassemble verified assets into the existing draft
         env:
           GH_TOKEN: ${{ github.token }}
-          RELAY_PREFLIGHT: '1'
+          RELAY_PREFLIGHT: '0'
         run: python .github/scripts/release-relay.py
+
