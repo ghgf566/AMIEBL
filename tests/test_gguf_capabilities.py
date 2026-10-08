@@ -180,6 +180,18 @@ class FitCommandTests(unittest.TestCase):
         cmd = manager.build_fit_params_command(".", model)
         self.assertNotIn("--fit-target", cmd)
 
+class FitParameterTests(unittest.TestCase):
+    def test_gpu_auto_fit_reserve_is_only_passed_when_enabled(self):
+        model = {"path": "main.gguf", "context": 65536, "cache_type": "q4_0",
+                 "fit_target_enabled": True, "fit_target_mib": 3072}
+        cmd = manager.build_fit_params_command("engine", model)
+        self.assertIn("--fit-target", cmd)
+        self.assertEqual(cmd[cmd.index("--fit-target") + 1], "3072")
+        self.assertEqual(cmd[cmd.index("-c") + 1], "65536")
+        self.assertEqual(cmd[cmd.index("-ctk") + 1], "q4_0")
+        self.assertEqual(cmd[cmd.index("-ctv") + 1], "q4_0")
+        model["fit_target_enabled"] = False
+        self.assertNotIn("--fit-target", manager.build_fit_params_command("engine", model))
 class FitOutputTests(unittest.TestCase):
     def test_parses_positive_gpu_layer_count(self):
         self.assertEqual(manager.parse_fit_gpu_layers("-c 65536 -ngl 28"), 28)
