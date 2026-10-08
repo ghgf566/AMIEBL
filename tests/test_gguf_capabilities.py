@@ -188,6 +188,17 @@ class GgufCapabilityTests(unittest.TestCase):
             self.assertEqual(result["mtp_capability"], "unavailable")
             self.assertEqual(result["mtp_layers"], 0)
 
+    def test_detects_mtp_tensor_in_later_split_shard(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            first = root / "model-00001-of-00002.gguf"
+            second = root / "model-00002-of-00002.gguf"
+            write_fixture(first, nextn_layers=1, nextn_tensor=False)
+            write_fixture(second, nextn_layers=1, nextn_tensor=True)
+            result = manager.inspect_gguf_capabilities(str(first))
+            self.assertEqual(result["mtp_capability"], "available")
+            self.assertEqual(result["mtp_layers"], 1)
+            self.assertEqual(result["mtp_tensor_count"], 1)
     def test_marks_declared_but_missing_mtp_as_incomplete(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "broken.gguf"
