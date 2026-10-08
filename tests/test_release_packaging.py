@@ -53,6 +53,30 @@ class ReleasePackagingSafetyTests(unittest.TestCase):
         self.assertIn("throw", check)
         self.assertNotIn("Remove-Item", check)
 
+    def test_apache_license_is_bundled_in_every_distribution(self):
+        license_text = source("LICENSE")
+        self.assertIn("Apache License", license_text[:100])
+        self.assertIn("Version 2.0, January 2004", license_text[:100])
+        for path in ("build-winui.ps1", "build.ps1", "package.ps1"):
+            self.assertIn("'LICENSE'", source(path), f"{path} must distribute the license")
+        self.assertIn("LICENSE", source("README.md"))
+        self.assertIn("LICENSE", source("tests/Test-ReleasePackaging.ps1"))
+
+    def test_end_to_end_installer_test_requires_disposable_ci_runner(self):
+        test = source("tests/Test-ReleasePackaging.ps1")
+        self.assertIn("$env:CI -ne 'true'", test)
+        self.assertIn("$env:GITHUB_ACTIONS -ne 'true'", test)
+        self.assertIn("Manual uninstall deleted user file", test)
+        self.assertIn("Inno uninstaller deleted user file", test)
+
+    def test_release_ci_executes_windows_regression_and_packaging(self):
+        ci = source(".github/workflows/release-tests.yml")
+        self.assertIn("windows-latest", ci)
+        self.assertIn("test_*.py", ci)
+        self.assertIn("tests/DesktopPlatformRegression", ci)
+        self.assertIn("Test-ReleasePackaging.ps1", ci)
+        self.assertIn("-BuildInstaller", ci)
+
     def test_installed_mode_overrides_old_portable_marker(self):
         host = source("desktop-platform/BackendHost.cs")
         self.assertIn('File.Exists(Path.Combine(applicationDir, "installed.flag"))', host)
