@@ -346,7 +346,7 @@ def validate_config(value: Any) -> dict:
         if not isinstance(m.get("reasoning_budget_supported"), bool):
             raise ValueError("reasoning_budget_supported 必須是布林值。")
         if not isinstance(m.get("reasoning_toggle_keys"), list) or any(
-            key not in ("enable_thinking", "thinking", "add_nothink_token") for key in m["reasoning_toggle_keys"]
+            key not in ("enable_thinking", "thinking", "thinking_mode", "add_nothink_token") for key in m["reasoning_toggle_keys"]
         ):
             raise ValueError("無效的 reasoning toggle key。")
         if m.get("reasoning_detection") not in ("pending", "legacy", "gguf", "runtime"):
@@ -448,13 +448,17 @@ def analyze_reasoning_template(template: str) -> dict:
         toggle_keys.append("enable_thinking")
     if re.search(r"\badd_nothink_token\b", template):
         toggle_keys.append("add_nothink_token")
+    if re.search(r"\bthinking_mode\b", template) and re.search(r"(?i)['\"](?:enabled|disabled|adaptive)['\"]", template):
+        toggle_keys.append("thinking_mode")
     # DeepSeek V3.x and some other templates use a plain "thinking" kwarg.
     if re.search(r"(?i)(?:if|set|default|defined|not)\s+[^\n{}]{0,80}\bthinking\b|\bthinking\s+is\s+(?:not\s+)?defined", template):
         toggle_keys.append("thinking")
 
-    has_reasoning_effort = bool(re.search(r"\breasoning_effort\b", template))
+    has_reasoning_effort = bool(re.search(r"\b(?:reasoning_effort|reasoning_strength)\b", template))
     has_reasoning_markers = any(token in lower for token in (
-        "<think>", "</think>", "reasoning_content", "thinking_start_token", "thinking_end_token"
+        "<think>", "</think>", "<mm:think>", "</mm:think>", "<|think|>",
+        "reasoning_content", "thinking_start_token", "thinking_end_token",
+        "think_begin_token", "think_end_token"
     ))
 
     # Some templates explicitly reject disabling thinking (for example some
@@ -476,8 +480,9 @@ def analyze_reasoning_template(template: str) -> dict:
 
     default_effort = ""
     for pattern in (
-        r"(?i)reasoning_effort\s*\|\s*default\(\s*['\"](minimal|low|medium|high|xhigh|max)['\"]",
-        r"(?i)default\(\s*['\"](minimal|low|medium|high|xhigh|max)['\"]\s*\)[^\n]{0,80}reasoning_effort",
+        r"(?i)(?:reasoning_effort|reasoning_strength)\s*\|\s*default\(\s*['\"](minimal|low|medium|high|xhigh|max)['\"]",
+        r"(?i)default\(\s*['\"](minimal|low|medium|high|xhigh|max)['\"]\s*\)[^\n]{0,80}(?:reasoning_effort|reasoning_strength)",
+        r"(?i)(?:reasoning_effort|reasoning_strength)[^\n]{0,80}\belse\s+['\"](minimal|low|medium|high|xhigh|max)['\"]",
     ):
         match = re.search(pattern, template)
         if match:
@@ -704,6 +709,8 @@ def apply_reasoning_toggle(kwargs: dict, toggle_keys: list[str], enabled: bool) 
     for key in toggle_keys:
         if key in ("enable_thinking", "thinking"):
             result[key] = enabled
+        elif key == "thinking_mode":
+            result[key] = "enabled" if enabled else "disabled"
         elif key == "add_nothink_token":
             result[key] = not enabled
     return result
