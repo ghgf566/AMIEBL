@@ -471,7 +471,7 @@ def analyze_reasoning_template(template: str) -> dict:
     )
     return result
 
-def inspect_gguf_capabilities(path_value: str) -> dict:
+def inspect_gguf_capabilities(path_value: str, _include_split_shards: bool = True) -> dict:
     """Inspect only the GGUF header/tensor directory; model weights are never loaded."""
     path = Path(path_value)
     result = {"mtp_capability": "unknown", "mtp_layers": 0, "gguf_architecture": "", "native_context": 0, "mtp_tensor_count": 0,
@@ -551,6 +551,31 @@ def inspect_gguf_capabilities(path_value: str) -> dict:
                 result["mtp_capability"] = "unavailable"
     except (OSError, ValueError, OverflowError, struct.error):
         pass
+
+    if _include_split_shards:
+        match = re.search(r"-(\d{5})-of-(\d{5})\.gguf$", path.name, re.I)
+        if match and int(match.group(1)) == 1:
+            total = int(match.group(2))
+            base = path.name[:match.start()]
+            for index in range(2, total + 1):
+                shard = path.with_name(f"{base}-{index:05d}-of-{total:05d}.gguf")
+                if not shard.is_file():
+                    continue
+                part = inspect_gguf_capabilities(str(shard), _include_split_shards=False)
+                result["mtp_layers"] = max(result["mtp_layers"], part.get("mtp_layers", 0))
+                result["mtp_tensor_count"] += part.get("mtp_tensor_count", 0)
+                if not result["gguf_architecture"] and part.get("gguf_architecture"):
+                    result["gguf_architecture"] = part["gguf_architecture"]
+                if result["native_context"] <= 0 and part.get("native_context", 0) > 0:
+                    result["native_context"] = part["native_context"]
+            if result["mtp_layers"] > 0 and result["mtp_tensor_count"] > 0:
+                result["mtp_capability"] = "available"
+            elif result["mtp_layers"] > 0:
+                result["mtp_capability"] = "incomplete"
+            elif result["mtp_tensor_count"] > 0:
+                result["mtp_capability"] = "unknown"
+            else:
+                result["mtp_capability"] = "unavailable"
     return result
 
 def parse_fit_gpu_layers(output_text: str) -> int | None:
