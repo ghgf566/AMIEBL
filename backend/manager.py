@@ -445,6 +445,18 @@ class Manager:
         else:
             self.config = validate_config(default_config())
             atomic_json(self.config_path, self.config)
+        capability_changed = False
+        for model in self.config["models"]:
+            if model.get("mtp_capability", "unknown") == "unknown" and Path(model["path"]).is_file():
+                detected = inspect_gguf_capabilities(model["path"])
+                model["mtp_capability"] = detected["mtp_capability"]
+                model["mtp_layers"] = detected["mtp_layers"]
+                if detected["mtp_capability"] != "available" and model.get("mtp"):
+                    model["mtp"] = False
+                    model["mtp_draft_max"] = None
+                capability_changed = True
+        if capability_changed:
+            atomic_json(self.config_path, self.config)
         self.port = port or self.config["api_port"]
         self.engine_port_override = engine_port
         self.token_path = data / "admin-token"
@@ -501,7 +513,22 @@ class Manager:
             self.log("先前任務紀錄無法讀取；服務仍可使用。")
 
     def save_config(self, value):
-        c = validate_config(value)
+        incoming = copy.deepcopy(value)
+        if isinstance(incoming, dict) and isinstance(incoming.get("models"), list):
+            previous = {m["id"]: m for m in self.config.get("models", []) if isinstance(m, dict) and isinstance(m.get("id"), str)}
+            for model in incoming["models"]:
+                if not isinstance(model, dict) or not isinstance(model.get("path"), str):
+                    continue
+                old = previous.get(model.get("id"))
+                path_changed = old is None or old.get("path") != model.get("path")
+                if path_changed or model.get("mtp_capability", "unknown") == "unknown":
+                    detected = inspect_gguf_capabilities(model["path"])
+                    model["mtp_capability"] = detected["mtp_capability"]
+                    model["mtp_layers"] = detected["mtp_layers"]
+                    if detected["mtp_capability"] != "available":
+                        model["mtp"] = False
+                        model["mtp_draft_max"] = None
+        c = validate_config(incoming)
         backup = self.data / "backups"
         backup.mkdir(exist_ok=True)
         if self.config_path.exists():
@@ -654,6 +681,8 @@ class Manager:
                     raise ValueError("模型檔案不存在，請在模型庫重新選擇位置。")
                 if model["vision"] and not Path(model["mmproj"]).is_file():
                     raise ValueError("視覺模型檔案不存在，請重新指定。")
+                if model.get("mtp") and model.get("mtp_capability") != "available":
+                    raise ValueError("此 GGUF 未偵測到可用的 MTP／NextN 權重，請關閉 MTP 或改用包含 MTP head 的模型。")
                 engine_port = self.engine_port_override or self.config["engine_port"]
                 if not free_port(engine_port):
                     raise ValueError(f"模型引擎連接埠 {engine_port} 已被使用。請停止舊啟動器或更換連接埠。")
