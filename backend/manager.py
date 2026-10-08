@@ -470,7 +470,7 @@ class Manager:
                 model["mtp_capability"] = detected["mtp_capability"]
                 model["mtp_layers"] = detected["mtp_layers"]
                 model["native_context"] = detected["native_context"]
-                if detected["mtp_capability"] != "available" and model.get("mtp"):
+                if detected["mtp_capability"] != "available" and model.get("mtp") and model.get("mtp_source", "native") == "native":
                     model["mtp"] = False
                     model["mtp_draft_max"] = None
                 capability_changed = True
@@ -545,7 +545,7 @@ class Manager:
                     model["mtp_capability"] = detected["mtp_capability"]
                     model["mtp_layers"] = detected["mtp_layers"]
                     model["native_context"] = detected["native_context"]
-                    if detected["mtp_capability"] != "available":
+                    if detected["mtp_capability"] != "available" and model.get("mtp_source", "native") == "native":
                         model["mtp"] = False
                         model["mtp_draft_max"] = None
         c = validate_config(incoming)
