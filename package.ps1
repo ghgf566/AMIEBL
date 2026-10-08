@@ -62,12 +62,14 @@ if ($PythonHome) {
 }
 
 Copy-Item -LiteralPath (Join-Path $repo 'installer') -Destination (Join-Path $portable 'installer') -Recurse -Force
-Copy-Item -LiteralPath (Join-Path $repo 'CONTRACT.md') -Destination (Join-Path $portable 'CONTRACT.md') -Force
+foreach ($document in @('LICENSE','README.md','SECURITY.md','PRODUCT-IDENTITY.md','DESKTOP-ARCHITECTURE.md','CONTRACT.md')) {
+    Copy-Item -LiteralPath (Join-Path $repo $document) -Destination (Join-Path $portable $document) -Force
+}
 Copy-Item -LiteralPath (Join-Path $repo '使用說明.md') -Destination (Join-Path $portable '使用說明.md') -Force
 @('@echo off', 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0installer\Install-LocalModelManager.ps1" -PortableDirectory "%~dp0"', 'pause') | Set-Content -LiteralPath (Join-Path $portable 'Install-LocalModelManager.cmd') -Encoding ASCII
 
 @{
-    product = 'Local Model Manager'
+    product = 'AMIEBL'
     version = '1.0.0'
     built_at_utc = [DateTime]::UtcNow.ToString('o')
     engine_source = [IO.Path]::GetFullPath($LlamaRoot)
