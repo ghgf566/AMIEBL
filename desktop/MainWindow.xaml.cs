@@ -561,7 +561,14 @@ public partial class MainWindow : Window
             externalMtpSettings.Visibility = enabled && source == "external" ? Visibility.Visible : Visibility.Collapsed;
         }
         mtpSource.SelectionChanged += (_, _) => { RefreshMtpSettings(); dirty = true; };
-        mtp.Checked += (_, _) => RefreshMtpSettings();
+        mtp.Checked += (_, _) =>
+        {
+            // Models without native NextN must never remain on a disabled
+            // source when the user enables MTP. External Draft remains usable.
+            if (!nativeMtpAvailable && mtpSource.SelectedItem == nativeMtpItem)
+                mtpSource.SelectedItem = externalMtpItem;
+            RefreshMtpSettings();
+        };
         mtp.Unchecked += (_, _) => RefreshMtpSettings();
         RefreshMtpSettings();
         var vision = Check(panel, "啟用視覺輸入", J.B(model, "vision"));
