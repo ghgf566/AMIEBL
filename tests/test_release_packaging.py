@@ -22,6 +22,7 @@ class ReleasePackagingSafetyTests(unittest.TestCase):
         self.assertIn(r"\portable.flag", iss)
         self.assertIn(r"\data\*", iss)
         self.assertIn(r"\models\*", iss)
+        self.assertNotIn("createallsubdirs", next(line for line in iss.splitlines() if line.startswith("Source:")))
         self.assertIn("installed.flag", iss)
         self.assertIn("CurUninstallStepChanged", iss)
         self.assertIn("RegQueryStringValue", iss)
