@@ -61,7 +61,19 @@ def atomic_text(path: Path, text: str) -> None:
             f.write(text)
             f.flush()
             os.fsync(f.fileno())
-        os.replace(temp, path)
+        # Windows antivirus, indexers and sync clients (notably OneDrive) can
+        # briefly hold the destination between close() and ReplaceFile/rename.
+        # Retry only transient sharing/access-denied cases; persistent or
+        # unrelated filesystem errors still surface immediately.
+        for attempt in range(8):
+            try:
+                os.replace(temp, path)
+                break
+            except OSError as exc:
+                transient = isinstance(exc, PermissionError) or getattr(exc, "winerror", None) in (5, 32, 33)
+                if not transient or attempt == 7:
+                    raise
+                time.sleep(0.015 * (attempt + 1))
     finally:
         if os.path.exists(temp):
             os.unlink(temp)
