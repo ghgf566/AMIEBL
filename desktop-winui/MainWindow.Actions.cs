@@ -16,6 +16,18 @@ namespace AMIEBL.WinUI;
 
 public sealed partial class MainWindow
 {
+    private async void ExitClicked(object sender,RoutedEventArgs args)=>await Run(Exit);
+    private static string ConnectionSummary(JsonObject result)
+    {
+        return (J.B(result,"ok")?"連線檢查通過":"連線檢查發現問題")+"\nAPI："+J.S(result,"api_url")+
+            "\nllama.cpp："+(J.B(result,"engine_exists")?"已找到":"找不到引擎，請確認系統頁的引擎資料夾")+
+            "\nPython："+(J.B(result,"python_ok")?"可用":"不可用")+"\n引擎連接埠："+J.S(result,"port_status","未取得狀態")+
+            "\n本機模型登錄："+J.A(result,"models").Count(x=>!J.S(x,"id").Contains("::"))+" 個";
+    }
+    private async Task CheckConnection()
+    {
+        var result=await api!.Get("/manager/connection");Notice.Severity=J.B(result,"ok")?InfoBarSeverity.Success:InfoBarSeverity.Warning;Notice.Message=ConnectionSummary(result);Notice.IsOpen=true;
+    }
     private async Task LoadDefault() { await api!.Post("/manager/load",new JsonObject { ["model_id"]=J.S(vm.Config,"default_model_id") }); await Poll(); }
     private async Task Unload() { await api!.Post("/manager/unload"); await Poll(); }
     private async Task ToggleAccepting() { await api!.Post("/manager/accepting",new JsonObject { ["accepting"]=!J.B(vm.Status,"accepting",true) }); await Poll(); }

@@ -34,6 +34,30 @@ public sealed partial class MainWindow
         NavIndicator.Opacity=1;
         visual.Offset=new System.Numerics.Vector3((float)point.X,(float)(point.Y+(item.ActualHeight-16)/2),0);
     }
+    private static Microsoft.UI.Xaml.Controls.Primitives.ToggleButton? ExpanderHeader(DependencyObject root)
+    {
+        if(root is Microsoft.UI.Xaml.Controls.Primitives.ToggleButton toggle)return toggle;
+        for(int i=0;i<VisualTreeHelper.GetChildrenCount(root);i++) {var found=ExpanderHeader(VisualTreeHelper.GetChild(root,i));if(found is not null)return found;}
+        return null;
+    }
+    private async Task VerifyAnchoredExpander(Expander expander)
+    {
+        Root.UpdateLayout();await Task.Delay(300);
+        var header=ExpanderHeader(expander)??throw new InvalidOperationException("找不到展開卡片的標題。");
+        double y=header.TransformToVisual(Root).TransformPoint(new Windows.Foundation.Point(0,0)).Y;
+        foreach(bool open in new[]{true,false,true,false})
+        {
+            expander.IsExpanded=open;Root.UpdateLayout();await Task.Delay(30);
+            if(Math.Abs(header.TransformToVisual(Root).TransformPoint(new Windows.Foundation.Point(0,0)).Y-y)>1)throw new InvalidOperationException("展開時標題瞬移。");
+            await Task.Delay(300);
+            if(Math.Abs(header.TransformToVisual(Root).TransformPoint(new Windows.Foundation.Point(0,0)).Y-y)>1)throw new InvalidOperationException("收放後標題位置變動。");
+        }
+    }
+    private static bool FieldVisible(FrameworkElement control)
+    {
+        for(DependencyObject? parent=control;parent is not null;parent=VisualTreeHelper.GetParent(parent))if(parent is FrameworkElement element&&element.Visibility==Visibility.Collapsed)return false;
+        return true;
+    }
     private readonly Dictionary<string,Slider> sliders=new();
     private static Border Card(string title, UIElement content)
     {
@@ -62,7 +86,7 @@ public sealed partial class MainWindow
         "cache_type"=>"f16 精度較高；q8_0／q4_0 減少 KV 記憶體用量，實際支援依引擎與模型而定。",
         "mtp"=>"推測解碼可能加快生成；需模型內建 NextN／MTP 或相容的外部 Draft，並非每個 GGUF 都支援。",
         "vision"=>"需搭配相容的 projector GGUF；勾選並指定路徑後，重新載入才會套用。",
-        "idle_minutes"=>"0 不自動卸載；模型欄位留白時使用系統預設。",
+        "idle_minutes"=>"所有模型共用此閒置時間。0 不自動卸載；手動保持載入時會暫停自動卸載。",
         "temperature"=>"控制抽樣隨機性；較低偏穩定，較高偏多樣。空白交由客戶端／引擎；明確填值會覆蓋請求採樣值，下次請求生效。",
         "top_p"=>"候選詞累積機率範圍（0～1）；較低更聚焦。留白使用客戶端／引擎預設。",
         "top_k"=>"只保留機率最高的 K 個候選詞；0 不設限。留白使用客戶端／引擎預設。",
@@ -99,6 +123,7 @@ public sealed partial class MainWindow
         setting.PropertyChanged+=(_,e)=> { if(e.PropertyName==nameof(setting.Value))Sync(); };
         block.Children.Add(slider);
     }
+    private Expander? modelLocations,serviceLogExpander;
     private UIElement BuildModelLocations()
     {
         var content=Panel();content.Children.Add(Text("掃描來源；更改登錄不會移動或刪除 GGUF。",12));
@@ -108,7 +133,7 @@ public sealed partial class MainWindow
             content.Children.Add(Row(Action("變更位置",async()=> { if(!await LeaveEditor())return;var replacement=await PickFolder();if(replacement is null)return;await SetModelLocation(path,replacement);ShowPage("模型庫"); }),Action("移除",async()=> { if(!await LeaveEditor())return;await SetModelLocation(path,null);ShowPage("模型庫"); })));
         }
         content.Children.Add(Action("＋ 新增模型資料夾",async()=> { if(!await LeaveEditor())return;var path=await PickFolder();if(path is null)return;await SetModelLocation(null,path);ShowPage("模型庫"); }));
-        return new Expander { Header="模型存放位置",Content=content,IsExpanded=true,HorizontalAlignment=HorizontalAlignment.Stretch };
+        modelLocations=new Expander { Header="模型存放位置",Content=Scroll(content),MaxHeight=340,IsExpanded=false,ExpandDirection=ExpandDirection.Up,HorizontalAlignment=HorizontalAlignment.Stretch,HorizontalContentAlignment=HorizontalAlignment.Stretch };return modelLocations;
     }
     private Task SetModelLocation(string? previous,string? replacement)=>vm.SaveConfig(c=>
     {
@@ -130,7 +155,7 @@ public sealed partial class MainWindow
         logBox=new TextBox { IsReadOnly=true,AcceptsReturn=true,TextWrapping=TextWrapping.NoWrap,Height=150,FontFamily=new FontFamily("Consolas") };
         var logs=Panel();logs.Children.Add(Text("預設只保留狀態與錯誤；完整請求記錄可在系統頁開啟。",12));logs.Children.Add(logBox);
         logs.Children.Add(Row(Action("複製紀錄",()=> { var data=new DataPackage();data.SetText(logBox.Text);Clipboard.SetContent(data);Message("紀錄已複製。");return Task.CompletedTask; }),Action("開啟紀錄資料夾",()=> { Process.Start(new ProcessStartInfo(host.DataDir){UseShellExecute=true});return Task.CompletedTask; }),Action("清除紀錄",async()=> { if(await Confirm("清除已完成的任務與服務紀錄？"))await api!.Post("/manager/records/clear");await Poll(); })));
-        var expander=new Expander { Header="服務執行紀錄",Content=logs,HorizontalAlignment=HorizontalAlignment.Stretch };Grid.SetRow(expander,1);root.Children.Add(expander);UpdateTasks();return root;
+        var expander=new Expander { Header="服務執行紀錄",Content=logs,ExpandDirection=ExpandDirection.Up,HorizontalAlignment=HorizontalAlignment.Stretch,HorizontalContentAlignment=HorizontalAlignment.Stretch };serviceLogExpander=expander;Grid.SetRow(expander,1);root.Children.Add(expander);UpdateTasks();return root;
     }
     private void UpdateTasks()
     {

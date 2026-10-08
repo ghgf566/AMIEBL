@@ -191,6 +191,14 @@ public sealed partial class MainWindow : Window
             if(vm.Models.Count<2||vm.Profiles.Count<2)throw new InvalidOperationException("回歸測試需要至少兩個模型與模式。");
             ShowPage("模型庫");string id=editor!.Id;
             if(vm.Editor.IsDirty)throw new InvalidOperationException("初始化滑桿修改了草稿。");
+            Root.UpdateLayout();await Task.Delay(50);
+            if(FieldVisible(inputs["mtp_source"])||FieldVisible(inputs["mtp_draft_max"]))throw new InvalidOperationException("未開啟 MTP 時來源／tokens 未隱藏。");
+            ((CheckBox)inputs["mtp"]).IsChecked=true;await Task.Delay(30);
+            if(!FieldVisible(inputs["mtp_source"])||!FieldVisible(inputs["mtp_draft_max"]))throw new InvalidOperationException("開啟 MTP 時欄位未顯示。");
+            ((CheckBox)inputs["mtp"]).IsChecked=false;await Task.Delay(30);
+            if(FieldVisible(inputs["mtp_source"]))throw new InvalidOperationException("關閉 MTP 時來源未隱藏。");
+            if(inputs.ContainsKey("keep_loaded")||inputs.ContainsKey("idle_minutes"))throw new InvalidOperationException("模型仍包含個別卸載控制。");
+            if(modelLocations!.IsExpanded||!entityList!.Items.Cast<ModelSettings>().Any(x=>x.Id==J.S(vm.Config,"default_model_id")&&x.Name.Contains("預設")))throw new InvalidOperationException("位置卡片初始狀態或預設模型標記錯誤。");
             sliders["context"].Value=10;
             if(((TextBox)inputs["context"]).Text!="1024")throw new InvalidOperationException("Context 滑桿沒有同步數值。");
             ((TextBox)inputs["context"]).Text="768";
@@ -213,11 +221,16 @@ public sealed partial class MainWindow : Window
             requests=new JsonArray(new JsonObject { ["id"]="ux-fixture",["phase"]="completed",["model_name"]="回歸測試模型",["profile_name"]="程式設計",["elapsed_seconds"]=2.5,["prompt_tokens"]=128,["generated_tokens"]=64,["generation_tps"]=25.6,["decision"]="on",["effort"]="medium",["thinking_budget"]=64 });
             serviceLogs="[測試資料] 任務完成；未啟動推理。";
             string screenshotDir=Path.Combine(host.DataDir,"winui-screenshots");Directory.CreateDirectory(screenshotDir);
-            foreach(var next in new[]{"總覽","模型庫","模型庫效能","使用模式","思考預算","任務與紀錄","系統"})
+            foreach(var next in new[]{"總覽","模型庫","模型庫效能","使用模式","思考預算","任務與紀錄","服務紀錄展開","模型位置展開","系統"})
             {
-                ShowPage(next=="模型庫效能"?"模型庫":next=="思考預算"?"使用模式":next);Root.Measure(new Windows.Foundation.Size(1240,820));Root.Arrange(new Windows.Foundation.Rect(0,0,1240,820));Root.UpdateLayout();
+                ShowPage(next=="模型庫效能"?"模型庫":next=="思考預算"?"使用模式":next=="服務紀錄展開"?"任務與紀錄":next=="模型位置展開"?"模型庫":next);Root.Measure(new Windows.Foundation.Size(1240,820));Root.Arrange(new Windows.Foundation.Rect(0,0,1240,820));Root.UpdateLayout();
+                if(next=="模型庫")await VerifyAnchoredExpander(modelLocations!);
+                if(next=="任務與紀錄")await VerifyAnchoredExpander(serviceLogExpander!);
+                if(next=="模型位置展開")modelLocations!.IsExpanded=true;
+                if(next=="服務紀錄展開")serviceLogExpander!.IsExpanded=true;
+                if(next=="系統") {await CheckConnection();Root.UpdateLayout();await Task.Delay(50);}
                 double? footerY=editorActions?.TransformToVisual(Root).TransformPoint(new Windows.Foundation.Point(0,0)).Y;
-                if(next is "模型庫效能" or "思考預算" && editorScroll is ScrollViewer editScroll)editScroll.ChangeView(null,next=="模型庫效能"?600:460,null);
+                if(next is "模型庫效能" or "思考預算" or "系統" && editorScroll is ScrollViewer editScroll)editScroll.ChangeView(null,next=="模型庫效能"?600:next=="系統"?100000:460,null);
                 UpdateNavigationIndicator();await Task.Delay(350);
                 if(footerY is double before && editorActions is not null && (Math.Abs(editorActions.TransformToVisual(Root).TransformPoint(new Windows.Foundation.Point(0,0)).Y-before)>1 || before+editorActions.ActualHeight>Root.ActualHeight))throw new InvalidOperationException("儲存操作列未固定在可見區域。");
                 var bitmap=new RenderTargetBitmap();await bitmap.RenderAsync(Root);
@@ -228,7 +241,7 @@ public sealed partial class MainWindow : Window
                 await reader.LoadAsync((uint)stream.Size);var bytes=new byte[(int)stream.Size];reader.ReadBytes(bytes);await File.WriteAllBytesAsync(Path.Combine(screenshotDir,next+".png"),bytes);
                 pages.Add(new JsonObject { ["page"]=next,["rendered"]=true,["width"]=bitmap.PixelWidth,["height"]=bitmap.PixelHeight });
             }
-            await File.WriteAllTextAsync(Path.Combine(host.DataDir,"winui-smoke-test.json"),new JsonObject { ["ok"]=true,["editor_refresh_verified"]=true,["fixed_footer_verified"]=true,["slider_sync_verified"]=true,["model_locations_verified"]=true,["rapid_navigation_verified"]=true,["pages"]=pages,["model_loaded"]=J.S(vm.Status,"state")!="unloaded",["autostart_changed"]=false }.ToJsonString(new JsonSerializerOptions {WriteIndented=true}));
+            await File.WriteAllTextAsync(Path.Combine(host.DataDir,"winui-smoke-test.json"),new JsonObject { ["ok"]=true,["editor_refresh_verified"]=true,["anchored_expanders_verified"]=true,["mtp_dependency_verified"]=true,["system_footer_verified"]=true,["fixed_footer_verified"]=true,["slider_sync_verified"]=true,["model_locations_verified"]=true,["rapid_navigation_verified"]=true,["pages"]=pages,["model_loaded"]=J.S(vm.Status,"state")!="unloaded",["autostart_changed"]=false }.ToJsonString(new JsonSerializerOptions {WriteIndented=true}));
         }
         finally {vm.Config=await api!.Put("/manager/config",original);vm.Editor.Discard();}
     }

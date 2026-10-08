@@ -20,20 +20,21 @@ public sealed partial class MainWindow
     {
         var grid=new Grid { ColumnSpacing=24 };
         grid.ColumnDefinitions.Add(new() { Width=new GridLength(240) }); grid.ColumnDefinitions.Add(new() { Width=new GridLength(1,GridUnitType.Star) });
-        var left=Panel(); entityList=new ListView { MaxHeight=300, Foreground=new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255,240,243,249)),SelectionMode=ListViewSelectionMode.Single, DisplayMemberPath="Name" };
+        var left=new Grid { RowSpacing=12 };foreach(var height in new[]{GridLength.Auto,new GridLength(1,GridUnitType.Star),GridLength.Auto,GridLength.Auto})left.RowDefinitions.Add(new(){Height=height});
+        entityList=new ListView { Foreground=new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255,240,243,249)),SelectionMode=ListViewSelectionMode.Single, DisplayMemberPath="Name" };
         PopulateList(collection);
         var search=new TextBox { PlaceholderText="搜尋名稱／ID" };
         search.TextChanged += (_, _) =>
         {
             if (working) return;
             selecting=true;
-            if (collection=="models") entityList.ItemsSource=vm.Models.Where(x=>(x.Name+" "+x.Id+" "+x.Path).Contains(search.Text,StringComparison.OrdinalIgnoreCase)).ToArray();
+            if (collection=="models") entityList.ItemsSource=ModelRows(search.Text);
             else entityList.ItemsSource=vm.Profiles.Where(x=>(x.Name+" "+x.Id).Contains(search.Text,StringComparison.OrdinalIgnoreCase)).ToArray();
             selecting=false;
         };
-        left.Children.Add(search); left.Children.Add(entityList);
+        left.Children.Add(search);Grid.SetRow(entityList,1);left.Children.Add(entityList);
         entityEditor=new ContentControl { HorizontalContentAlignment=HorizontalAlignment.Stretch };
-        Grid.SetColumn(entityEditor,1); grid.Children.Add(Scroll(left)); grid.Children.Add(entityEditor);
+        Grid.SetColumn(entityEditor,1); grid.Children.Add(left); grid.Children.Add(entityEditor);
         entityList.SelectionChanged += async (_, _) =>
         {
             if (selecting) return;
@@ -47,10 +48,10 @@ public sealed partial class MainWindow
             });
         };
         if (collection=="models") {
-            left.Children.Add(Row(Action("加入 GGUF",AddModel),Action("掃描",ScanModels)));
-            left.Children.Add(BuildModelLocations());
+            var actions=Row(Action("加入 GGUF",AddModel),Action("掃描",ScanModels));Grid.SetRow(actions,2);left.Children.Add(actions);
+            var locations=BuildModelLocations();Grid.SetRow((FrameworkElement)locations,3);left.Children.Add(locations);
         }
-        else left.Children.Add(Row(Action("新增",AddProfile),Action("複製",DuplicateProfile)));
+        else {var actions=Row(Action("新增",AddProfile),Action("複製",DuplicateProfile));Grid.SetRow(actions,2);left.Children.Add(actions);}
         string? selected=collection=="models" ? vm.SelectedModelId : vm.SelectedProfileId;
         var first=J.A(vm.Config,collection).FirstOrDefault(x=>J.S(x,"id")==selected) ?? J.A(vm.Config,collection).FirstOrDefault();
         if (first is not null) { OpenEditor(collection,J.S(first,"id")); RestoreEntitySelection(collection); }
@@ -58,10 +59,11 @@ public sealed partial class MainWindow
         return grid;
     }
     private static string? EntityId(object? item) => item switch { ModelSettings m=>m.Id,ProfileSettings p=>p.Id,_=>null };
+    private ModelSettings[] ModelRows(string search)=>vm.Models.Where(x=>(x.Name+" "+x.Id+" "+x.Path).Contains(search,StringComparison.OrdinalIgnoreCase)).Select(x=>x with {Name=x.Name+(x.Id==J.S(vm.Config,"default_model_id")?" · 預設":"")}).ToArray();
     private void PopulateList(string collection)
     {
         if (entityList is null) return;
-        selecting=true; entityList.ItemsSource=collection=="models" ? vm.Models.ToArray() : vm.Profiles.Cast<object>().ToArray(); selecting=false;
+        selecting=true; entityList.ItemsSource=collection=="models" ? ModelRows("") : vm.Profiles.Cast<object>().ToArray(); selecting=false;
     }
     private void RestoreEntitySelection(string collection)
     {
@@ -94,12 +96,13 @@ public sealed partial class MainWindow
     private UIElement BuildForm(SettingsEditorViewModel draft)
     {
         inputs.Clear(); sliders.Clear(); var panel=Panel();
+        if(draft.Collection=="system") {panel.Children.Add(Action("檢查連線",CheckConnection));panel.Children.Add(Text("資料位置："+host.DataDir,12));}
         var sections=new Dictionary<string,StackPanel>();
         StackPanel Section(string title)
         {
             if(sections.TryGetValue(title,out var existing))return existing;
             var content=Panel(); sections[title]=content;
-            if(title is "進階採樣" or "VS Code Agent") panel.Children.Add(new Expander { Header=title,Content=content,HorizontalAlignment=HorizontalAlignment.Stretch });
+            if(title is "進階採樣" or "VS Code Agent") panel.Children.Add(new Expander { Header=title,Content=content,HorizontalAlignment=HorizontalAlignment.Stretch,HorizontalContentAlignment=HorizontalAlignment.Stretch });
             else panel.Children.Add(Card(title,content));
             return content;
         }
@@ -152,11 +155,11 @@ public sealed partial class MainWindow
         }));
         if (draft.Collection=="models")
         {
-            panel.Children.Add(Row(Action("載入／重新載入",async ()=> { await SaveEditor(); await api!.Post("/manager/load",new JsonObject { ["model_id"]=draft.Id }); await Poll(); }),Action("設為預設",async ()=> { await SaveEditor(); await vm.SaveConfig(c=>c["default_model_id"]=draft.Id); Message("已設為預設模型。"); }),Action("移除登錄",DeleteEntity)));
+            panel.Children.Add(Row(Action("載入／重新載入",async ()=> { await SaveEditor(); await api!.Post("/manager/load",new JsonObject { ["model_id"]=draft.Id }); await Poll(); }),Action("設為預設",async ()=> { await SaveEditor(); await vm.SaveConfig(c=>c["default_model_id"]=draft.Id); PopulateList("models");RestoreEntitySelection("models");Message("已設為預設模型。"); }),Action("移除登錄",DeleteEntity)));
 
         }
         else if (draft.Collection=="profiles") panel.Children.Add(Action("刪除此模式",DeleteEntity));
-        if(draft.Collection=="system") {panel.Children.Add(saveActions);return panel;}
+        if(draft.Collection=="system")panel.Children.Add(Card("設定備份與還原",Row(Action("匯出設定",Export),Action("匯入設定",Import))));
         var layout=new Grid { RowSpacing=12 };layout.RowDefinitions.Add(new(){Height=new GridLength(1,GridUnitType.Star)});layout.RowDefinitions.Add(new(){Height=GridLength.Auto});
         editorScroll=Scroll(panel);layout.Children.Add(editorScroll);
         editorActions=saveActions;Grid.SetRow(saveActions,1);layout.Children.Add(saveActions);return layout;
@@ -199,7 +202,6 @@ public sealed partial class MainWindow
     private UIElement BuildSystem()
     {
         editor=new(vm,"system",vm.Config,EditorSchemas.System(vm.Profiles.Select(x=>x.Id).ToArray()));
-        var root=Panel(); root.Children.Add(Row(Action("檢查連線",async ()=>Message((await api!.Get("/manager/connection")).ToJsonString(new JsonSerializerOptions { WriteIndented=true }))),Action("匯出設定",Export),Action("匯入設定",Import),Action("完全結束",Exit)));
-        root.Children.Add(Text("資料位置："+host.DataDir)); root.Children.Add(BuildForm(editor)); return Scroll(root);
+        return BuildForm(editor);
     }
 }

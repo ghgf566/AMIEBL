@@ -12,11 +12,10 @@ public static class EditorSchemas
         Bool("auto_fit", "自動估算 GPU 層數"), Int("gpu_layers", "GPU 層數（-1 = 全部）",-1,10000, enabled: d => !J.B(d,"auto_fit")),
         Bool("fit_target_enabled", "自訂每張 GPU 的預留記憶體"), Int("fit_target_mib", "預留顯示記憶體（MiB）",0,1048576, enabled: d => J.B(d,"auto_fit") && J.B(d,"fit_target_enabled")),
         Choice("cache_type", "KV Cache", "f16", "q8_0", "q4_0"),
-        Bool("mtp", "啟用 MTP"), Choice("mtp_source", "MTP 來源", "native", "external"),
+        Bool("mtp", "啟用 MTP"), new("mtp_source", "MTP 來源", FieldKind.Choice, Options: ["native","external"], Enabled: d => J.B(d,"mtp")),
         new("mtp_draft_path", "外部 Draft GGUF 路徑", Enabled: d => J.B(d,"mtp") && J.S(d,"mtp_source")=="external"),
         Int("mtp_draft_max", "MTP 猜測 tokens（空白 = 預設）",1,64,true, d => J.B(d,"mtp")),
         Bool("vision", "啟用視覺"), new("mmproj", "視覺 projector 路徑", Enabled: d => J.B(d,"vision")),
-        Bool("keep_loaded", "保持載入"), Int("idle_minutes", "閒置卸載分鐘（空白 = 系統，0 = 不卸載）",0,10080,true),
         Choice("default_profile_id", "預設使用模式", profiles),
         new("temperature", "Temperature（空白 = 客戶端/引擎預設）", FieldKind.Number,true,0,5),
         new("top_p", "Top P", FieldKind.Number,true,0,1), Int("top_k", "Top K",0,100000,true), new("min_p", "Min P", FieldKind.Number,true,0,1)

@@ -664,7 +664,7 @@ class ManagerIntegration(unittest.TestCase):
             self.assertEqual(self.get("/manager/status")["state"], "ready")
             time.sleep(0.1)
 
-    def test_model_zero_idle_timeout_overrides_global_unload(self):
+    def test_legacy_model_idle_timeout_follows_global_unload(self):
         config = self.get("/manager/config")
         config["idle_minutes"] = 0.01
         model = next(x for x in config["models"] if x["id"] == "test-model")
@@ -672,10 +672,8 @@ class ManagerIntegration(unittest.TestCase):
         response = self.api("PUT", "/manager/config", json=config)
         self.assertEqual(response.status_code, 200, response.text)
         self.load()
-        deadline = time.monotonic() + 1.0
-        while time.monotonic() < deadline:
-            self.assertEqual(self.get("/manager/status")["state"], "ready")
-            time.sleep(0.1)
+        eventually(lambda: self.get("/manager/status")["state"] == "unloaded")
+        self.assertEqual(self.get("/manager/config")["models"][0]["idle_minutes"], 0)
     def test_idle_unloads_and_observations_do_not_reset_timer(self):
         self.save(idle_minutes=0.025)
         self.load()

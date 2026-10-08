@@ -1736,8 +1736,8 @@ class Manager:
         model = next((m for m in self.config["models"] if m["id"] == self.model["id"]), self.model)
         if model.get("keep_loaded"):
             return None
-        minutes = model.get("idle_minutes")
-        resolved = float(self.config["idle_minutes"] if minutes is None else minutes)
+        # The timeout is global; legacy per-model values remain losslessly saved.
+        resolved = float(self.config["idle_minutes"])
         if resolved <= 0:
             return None
         return resolved * 60
