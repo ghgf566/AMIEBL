@@ -604,17 +604,36 @@ class CancelledRequest(Exception):
     pass
 
 
-ENGINE_LOAD_MODEL_FIELDS = (
-    "path", "context", "cpu_threads", "gpu_layers", "auto_fit",
-    "fit_target_enabled", "fit_target_mib", "cache_type",
-    "mtp", "mtp_source", "mtp_draft_path", "mtp_draft_max",
-    "vision", "mmproj",
-)
-
-
 def engine_load_model_config(model: dict) -> dict:
-    """Return only model fields that affect the llama-server process itself."""
-    return {key: copy.deepcopy(model.get(key)) for key in ENGINE_LOAD_MODEL_FIELDS}
+    """Return the effective model settings that affect the llama-server process."""
+    auto_fit = bool(model.get("auto_fit"))
+    mtp = bool(model.get("mtp"))
+    vision = bool(model.get("vision"))
+    result = {
+        "path": model.get("path"),
+        "context": model.get("context"),
+        "cpu_threads": model.get("cpu_threads", 0),
+        "cache_type": model.get("cache_type"),
+        "auto_fit": auto_fit,
+        "mtp": mtp,
+        "vision": vision,
+    }
+    if auto_fit:
+        custom_reserve = bool(model.get("fit_target_enabled"))
+        result["fit_target_enabled"] = custom_reserve
+        if custom_reserve:
+            result["fit_target_mib"] = model.get("fit_target_mib")
+    else:
+        result["gpu_layers"] = model.get("gpu_layers")
+    if mtp:
+        source = model.get("mtp_source", "native")
+        result["mtp_source"] = source
+        result["mtp_draft_max"] = model.get("mtp_draft_max")
+        if source == "external":
+            result["mtp_draft_path"] = model.get("mtp_draft_path")
+    if vision:
+        result["mmproj"] = model.get("mmproj")
+    return result
 
 @dataclass
 class Ticket:
@@ -1026,12 +1045,20 @@ class Manager:
                 raise
 
     async def ensure_ready(self, ticket):
-        if self.state == "ready" and self.model and self.model["id"] == ticket.model["id"]:
+        ready_same_config = (
+            self.state == "ready" and self.model and self.model["id"] == ticket.model["id"]
+            and not self.load_settings_changed(ticket.model)
+        )
+        if ready_same_config:
             return
         ticket.record["phase"] = "loading"
         if self.load_task and not self.load_task.done():
             await self.interruptible(asyncio.shield(self.load_task), ticket)
-        if self.state != "ready" or not self.model or self.model["id"] != ticket.model["id"]:
+        needs_load = (
+            self.state != "ready" or not self.model or self.model["id"] != ticket.model["id"]
+            or self.load_settings_changed(ticket.model)
+        )
+        if needs_load:
             self.load_task = asyncio.create_task(self.load(ticket.model))
             try:
                 await self.interruptible(asyncio.shield(self.load_task), ticket)
