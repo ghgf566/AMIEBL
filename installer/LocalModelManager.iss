@@ -29,7 +29,8 @@ UninstallDisplayIcon={app}\manager.ico
 
 [Files]
 ; The installed build must never copy portable mode or mutable data / GGUF models.
-Source: "{#SourceDir}\*"; DestDir: "{app}"; Excludes: "\portable.flag,\installed.flag,\data\*,\models\*"; Flags: ignoreversion recursesubdirs createallsubdirs
+; Do not use createallsubdirs: it recreates excluded empty models/data folders.
+Source: "{#SourceDir}\*"; DestDir: "{app}"; Excludes: "\portable.flag,\installed.flag,\data\*,\models\*"; Flags: ignoreversion recursesubdirs
 
 [Icons]
 Name: "{group}\Local Model Manager"; Filename: "{app}\LocalModelManager.exe"; WorkingDir: "{app}"; IconFilename: "{app}\manager.ico"
