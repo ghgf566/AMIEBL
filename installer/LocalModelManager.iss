@@ -34,13 +34,13 @@ Name: "{group}\解除安裝 Local Model Manager"; Filename: "{uninstallexe}"
 
 [UninstallDelete]
 ; Remove only our installation marker; user data and unmanaged files must remain.
-Type: files; Name: "{app}\\installed.flag"
+Type: files; Name: "{app}\installed.flag"
 
 [Code]
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
   if CurStep = ssPostInstall then
-    if not SaveStringToFile(ExpandConstant('{app}\\installed.flag'), 'AMIEBL installed mode', False) then
+    if not SaveStringToFile(ExpandConstant('{app}\installed.flag'), 'AMIEBL installed mode', False) then
       RaiseException('Unable to write installed-mode marker.');
 end;
 
@@ -49,8 +49,8 @@ var
   StartupValue, Executable: String;
 begin
   if CurUninstallStep <> usUninstall then Exit;
-  Executable := Lowercase(ExpandConstant('{app}\\LocalModelManager.exe'));
-  if RegQueryStringValue(HKCU, 'Software\\Microsoft\\Windows\\CurrentVersion\\Run', 'LocalModelManager', StartupValue) then
+  Executable := Lowercase(ExpandConstant('{app}\LocalModelManager.exe'));
+  if RegQueryStringValue(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Run', 'LocalModelManager', StartupValue) then
     if Pos(Executable, Lowercase(StartupValue)) > 0 then
-      RegDeleteValue(HKCU, 'Software\\Microsoft\\Windows\\CurrentVersion\\Run', 'LocalModelManager');
+      RegDeleteValue(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Run', 'LocalModelManager');
 end;
