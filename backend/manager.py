@@ -20,6 +20,7 @@ import re
 import secrets
 import shutil
 import socket
+import struct
 import subprocess
 import sys
 import tempfile
@@ -91,7 +92,7 @@ def default_config() -> dict:
             "log_retention_days": 7, "vscode_abort_watch": True,
             "models": [{"id": "qwen3.8-27b-local", "name": "Qwen3.8 27B", "path": str(model_path),
                         "mmproj": projector_value, "vision": bool(projector_value and Path(projector_value).is_file()), "context": 65536, "gpu_layers": 17,
-                        "auto_fit": True, "fit_target_enabled": False, "fit_target_mib": 2048, "cache_type": "q4_0", "mtp": True, "mtp_draft_max": None,
+                        "auto_fit": True, "fit_target_enabled": False, "fit_target_mib": 2048, "cache_type": "q4_0", "mtp": True, "mtp_draft_max": None, "mtp_capability": "unknown", "mtp_layers": 0,
                         "keep_loaded": False, "idle_minutes": None, "default_profile_id": "coding",
                         "temperature": None, "top_p": None, "top_k": None, "min_p": None,
                         "reasoning_supported": True, "reasoning_efforts": ["low", "medium", "xhigh"]}],
@@ -220,7 +221,7 @@ def validate_config(value: Any) -> dict:
         if "fit_target_enabled" not in m:
             m["fit_target_enabled"] = True
         conservative = {"mmproj": "", "vision": False, "context": 8192, "gpu_layers": 0,
-                        "auto_fit": True, "fit_target_enabled": False, "fit_target_mib": 2048, "cache_type": "f16", "mtp": False, "mtp_draft_max": None,
+                        "auto_fit": True, "fit_target_enabled": False, "fit_target_mib": 2048, "cache_type": "f16", "mtp": False, "mtp_draft_max": None, "mtp_capability": "unknown", "mtp_layers": 0,
                         "keep_loaded": False, "idle_minutes": None, "default_profile_id": c["default_profile_id"],
                         "temperature": None, "top_p": None, "top_k": None, "min_p": None,
                         "reasoning_supported": False, "reasoning_efforts": []}
@@ -246,6 +247,9 @@ def validate_config(value: Any) -> dict:
             number(m["top_k"], "top_k", 0, 100000, True)
         if m.get("min_p") is not None:
             number(m["min_p"], "min_p", 0, 1)
+        if m.get("mtp_capability") not in ("available", "unavailable", "incomplete", "unknown"):
+            raise ValueError("無效的 MTP 能力偵測狀態。")
+        number(m.get("mtp_layers", 0), "MTP 層數", 0, 1024, True)
         if m.get("mtp_draft_max") is not None:
             number(m["mtp_draft_max"], "MTP 最大猜測 Token", 1, 64, True)
         if m["idle_minutes"] is not None:
@@ -258,6 +262,130 @@ def validate_config(value: Any) -> dict:
             raise ValueError("不支援的思考程度清單。")
     return c
 
+
+_GGUF_FIXED_TYPES = {
+    0: ("B", 1), 1: ("b", 1), 2: ("H", 2), 3: ("h", 2),
+    4: ("I", 4), 5: ("i", 4), 6: ("f", 4), 7: ("B", 1),
+    10: ("Q", 8), 11: ("q", 8), 12: ("d", 8),
+}
+
+
+def _gguf_read_exact(handle, size: int) -> bytes:
+    data = handle.read(size)
+    if len(data) != size:
+        raise ValueError("GGUF 檔案標頭不完整。")
+    return data
+
+
+def _gguf_u32(handle) -> int:
+    return struct.unpack("<I", _gguf_read_exact(handle, 4))[0]
+
+
+def _gguf_u64(handle) -> int:
+    return struct.unpack("<Q", _gguf_read_exact(handle, 8))[0]
+
+
+def _gguf_string(handle, max_length: int = 1024 * 1024 * 1024) -> str:
+    length = _gguf_u64(handle)
+    if length > max_length:
+        raise ValueError("GGUF 字串長度異常。")
+    return _gguf_read_exact(handle, length).decode("utf-8", errors="replace")
+
+
+def _gguf_skip_string(handle) -> None:
+    length = _gguf_u64(handle)
+    if length > 1024 * 1024 * 1024:
+        raise ValueError("GGUF 字串長度異常。")
+    handle.seek(length, os.SEEK_CUR)
+
+
+def _gguf_skip_value(handle, value_type: int) -> None:
+    if value_type in _GGUF_FIXED_TYPES:
+        handle.seek(_GGUF_FIXED_TYPES[value_type][1], os.SEEK_CUR)
+        return
+    if value_type == 8:
+        _gguf_skip_string(handle)
+        return
+    if value_type == 9:
+        element_type = _gguf_u32(handle)
+        count = _gguf_u64(handle)
+        if count > 1024 * 1024 * 1024:
+            raise ValueError("GGUF 陣列元素數量異常。")
+        if element_type in _GGUF_FIXED_TYPES:
+            handle.seek(_GGUF_FIXED_TYPES[element_type][1] * count, os.SEEK_CUR)
+        elif element_type == 8:
+            for _ in range(count):
+                _gguf_skip_string(handle)
+        else:
+            raise ValueError("GGUF 含有不支援的巢狀 metadata 類型。")
+        return
+    raise ValueError("GGUF metadata 類型無法辨識。")
+
+
+def _gguf_read_scalar(handle, value_type: int):
+    if value_type == 8:
+        return _gguf_string(handle)
+    spec = _GGUF_FIXED_TYPES.get(value_type)
+    if spec is None:
+        raise ValueError("GGUF metadata 不是可讀取的純量。")
+    return struct.unpack("<" + spec[0], _gguf_read_exact(handle, spec[1]))[0]
+
+
+def inspect_gguf_capabilities(path_value: str) -> dict:
+    """Inspect only the GGUF header/tensor directory; model weights are never loaded."""
+    path = Path(path_value)
+    result = {"mtp_capability": "unknown", "mtp_layers": 0, "gguf_architecture": "", "mtp_tensor_count": 0}
+    if not path.is_file():
+        return result
+    try:
+        with path.open("rb") as handle:
+            if _gguf_read_exact(handle, 4) != b"GGUF":
+                return result
+            version = _gguf_u32(handle)
+            if version not in (2, 3):
+                return result
+            tensor_count = _gguf_u64(handle)
+            kv_count = _gguf_u64(handle)
+            if tensor_count > 10_000_000 or kv_count > 10_000_000:
+                return result
+
+            nextn_layers = 0
+            architecture = ""
+            for _ in range(kv_count):
+                key = _gguf_string(handle, 65535)
+                value_type = _gguf_u32(handle)
+                if key == "general.architecture":
+                    architecture = str(_gguf_read_scalar(handle, value_type))
+                elif key.endswith(".nextn_predict_layers") and value_type in _GGUF_FIXED_TYPES:
+                    raw = _gguf_read_scalar(handle, value_type)
+                    nextn_layers = max(nextn_layers, int(raw))
+                else:
+                    _gguf_skip_value(handle, value_type)
+
+            nextn_tensors = 0
+            for _ in range(tensor_count):
+                name = _gguf_string(handle, 65535)
+                dimensions = _gguf_u32(handle)
+                if dimensions > 16:
+                    raise ValueError("GGUF tensor 維度數異常。")
+                handle.seek(8 * dimensions + 4 + 8, os.SEEK_CUR)
+                if ".nextn." in name or name.startswith("nextn."):
+                    nextn_tensors += 1
+
+            result["gguf_architecture"] = architecture
+            result["mtp_layers"] = nextn_layers
+            result["mtp_tensor_count"] = nextn_tensors
+            if nextn_layers > 0 and nextn_tensors > 0:
+                result["mtp_capability"] = "available"
+            elif nextn_layers > 0:
+                result["mtp_capability"] = "incomplete"
+            elif nextn_tensors > 0:
+                result["mtp_capability"] = "unknown"
+            else:
+                result["mtp_capability"] = "unavailable"
+    except (OSError, ValueError, OverflowError, struct.error):
+        pass
+    return result
 
 def free_port(port: int) -> bool:
     with socket.socket() as s:
@@ -1332,6 +1460,7 @@ def scan_models(directories):
                         base = filename[:shard.start()]
                         size = sum(p.stat().st_size for p in path.parent.glob(base + "-?????-of-" + shard[2] + ".gguf"))
                     entry = {"path": str(path), "name": path.stem, "size_bytes": size}
+                    entry.update(inspect_gguf_capabilities(str(path)))
                     (projectors if "mmproj" in low else models).append(entry)
                 except OSError:
                     pass
@@ -1413,6 +1542,14 @@ def create_app(manager: Manager):
     @app.post("/manager/scan")
     async def scan():
         return await asyncio.to_thread(scan_models, manager.config["model_dirs"])
+
+    @app.post("/manager/model-capabilities")
+    async def model_capabilities(request: Request):
+        body = await request.json()
+        path = body.get("path")
+        if not isinstance(path, str) or not path.strip():
+            raise ValueError("請指定要檢查的 GGUF 模型路徑。")
+        return await asyncio.to_thread(inspect_gguf_capabilities, path)
 
     @app.post("/manager/load")
     async def load(request: Request):
