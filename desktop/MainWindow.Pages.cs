@@ -134,7 +134,13 @@ public partial class MainWindow
             changed["agent_description"] = agentDescription.Text.Trim();
             changed["agent_tools"] = new JsonArray(agentTools.Text.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Where(x => x.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).Select(x => (JsonNode?)JsonValue.Create(x)).ToArray());
             changed["agent_instructions"] = Required(agentInstructions, "Agent 行為指令");
-            await SaveConfig(c => { var profiles = J.A(c, "profiles"); int index = profiles.ToList().FindIndex(x => J.S(x, "id") == id); if (index < 0) throw new InvalidOperationException("此模式已被移除，請重新開啟使用模式頁。"); profiles[index] = changed; });
+            await SaveConfig(c =>
+            {
+                var profiles = J.A(c, "profiles");
+                var target = profiles.FirstOrDefault(x => J.S(x, "id") == id) as JsonObject;
+                if (target is null) throw new InvalidOperationException("此模式已被移除，請重新開啟使用模式頁。");
+                CopyFields(target, changed, "name", "thinking_mode", "reasoning_level", "budget_mode", "thinking_budget", "max_tokens", "effort", "agent_sync_mode", "agent_name", "agent_description", "agent_tools", "agent_instructions");
+            });
             ShowNotice(Value(agentSync) == "managed" ? "使用模式已儲存。下次「連接 VS Code」會依 GUI 覆寫此 Agent。" : "使用模式已儲存。下次「連接 VS Code」只會維護模式標記，既有 VS Code Agent 的手動工具與指令會保留。");
         }
         pendingSave = Save;
