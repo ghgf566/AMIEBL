@@ -512,7 +512,7 @@ public partial class MainWindow : Window
         var mtp = Check(panel, "啟用 MTP", J.B(model, "mtp"));
         var mtpStatus = Text(mtpCapability switch
         {
-            "available" => $"此 GGUF 內建 MTP / NextN 權重（{J.S(model, "mtp_layers", "1")} 層），可直接使用；也可以改用外部 MTP Draft。",
+            "available" => $"此 GGUF 偵測到內建 MTP / NextN 權重（{J.S(model, "mtp_layers", "1")} 層），可嘗試使用；實際支援仍取決於目前 llama.cpp build，也可以改用外部 MTP Draft。",
             "incomplete" => "此 GGUF 的內建 MTP / NextN metadata 不完整，因此不能使用內建模式；仍可指定外部 MTP Draft。",
             "unavailable" => "此 GGUF 沒有內建 MTP / NextN head；仍可透過外部 MTP Draft 啟用 MTP。",
             _ => "尚未確認此 GGUF 是否有內建 MTP / NextN head；內建模式暫時停用，但仍可指定外部 Draft。"
@@ -546,7 +546,9 @@ public partial class MainWindow : Window
         mtp.Unchecked += (_, _) => RefreshMtpSettings();
         RefreshMtpSettings();
         var vision = Check(panel, "啟用視覺輸入", J.B(model, "vision"));
-        var projector = Field(panel, "配對的視覺模型（mmproj）", J.S(model, "mmproj")); panel.Children.Add(Button("選擇視覺模型", () => { PickFile(projector, "GGUF 視覺模型|*.gguf"); return Task.CompletedTask; }));
+        var projector = Field(panel, "配對的視覺模型（mmproj）", J.S(model, "mmproj"));
+        panel.Children.Add(Button("選擇視覺模型", () => { PickFile(projector, "GGUF 視覺模型|*.gguf"); return Task.CompletedTask; }));
+        panel.Children.Add(Text("mmproj 會額外占用 RAM / VRAM；目前獨立 llama-fit-params 預估不會把 projector 一起算入。若啟用視覺且顯存吃緊，請提高自訂預留顯示記憶體。", 11, true));
         var keep = Check(panel, "保持載入，不因閒置而卸載", J.B(model, "keep_loaded"));
         var idle = Field(panel, "閒置卸載分鐘（留白沿用系統設定；0 代表不自動卸載）", J.S(model, "idle_minutes"));
         var profile = Choice(panel, "預設使用模式", J.S(model, "default_profile_id", "coding"), J.A(config, "profiles").Select(x => (J.S(x, "id"), J.S(x, "name"))).ToArray());
