@@ -183,6 +183,10 @@ public partial class MainWindow : Window
         ShowNotice("設定已儲存。模型載入參數會在下次載入生效。"); await Poll();
     }
     private static JsonObject Clone(JsonNode node) => node.DeepClone().AsObject();
+    private static void CopyFields(JsonObject target, JsonObject source, params string[] keys)
+    {
+        foreach (string key in keys) target[key] = source[key]?.DeepClone();
+    }
     private string DefaultModel() => J.S(config, "default_model_id");
     private async Task LoadDefault() { if (api is null) return; await api.Post("/manager/load", new JsonObject { ["model_id"] = DefaultModel() }); ShowNotice("已送出載入要求。可在總覽查看進度。"); await Poll(); }
     private async Task Unload() { if (api is null) return; var result = await api.Post("/manager/unload"); ShowNotice(J.B(result, "deferred") ? "目前仍有任務，完成後會卸載模型。" : "已要求卸載模型。"); await Poll(); }
@@ -554,7 +558,16 @@ public partial class MainWindow : Window
         async Task Save()
         {
             var changed = Clone(model); changed["name"] = Required(name, "模型名稱"); changed["path"] = Required(path, "模型路徑"); changed["context"] = Number(context, "上下文容量", 512, nativeContext > 0 ? nativeContext : 2_097_152); changed["cpu_threads"] = (int)Math.Round(cpuSlider.Value); changed["gpu_layers"] = autoFit.IsChecked == true ? J.I(model, "gpu_layers", -1) : Number(gpu, "GPU 層數", -1); changed["auto_fit"] = autoFit.IsChecked == true; changed["fit_target_enabled"] = customReserve.IsChecked == true; changed["fit_target_mib"] = Number(reserve, "預留顯示記憶體"); changed["cache_type"] = Value(cache); string selectedMtpSource = (mtpSource.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "external"; changed["mtp"] = mtp.IsChecked == true; changed["mtp_source"] = selectedMtpSource; changed["mtp_draft_path"] = mtpDraftPath.Text.Trim(); changed["mtp_draft_max"] = mtp.IsChecked == true && OptionalNumber(mtpDraftMax, "MTP 最大猜測 Token", 1, 64) is int draftVal ? JsonValue.Create(draftVal) : null; if (mtp.IsChecked == true && selectedMtpSource == "native" && !nativeMtpAvailable) throw new InvalidOperationException("此 GGUF 沒有可用的內建 MTP / NextN，請改用外部 MTP Draft。"); if (mtp.IsChecked == true && selectedMtpSource == "external" && string.IsNullOrWhiteSpace(mtpDraftPath.Text)) throw new InvalidOperationException("請指定外部 MTP Draft GGUF。"); changed["vision"] = vision.IsChecked == true; changed["mmproj"] = projector.Text.Trim(); changed["keep_loaded"] = keep.IsChecked == true; changed["idle_minutes"] = string.IsNullOrWhiteSpace(idle.Text) ? null : JsonValue.Create(Number(idle, "閒置卸載分鐘", 1)); changed["default_profile_id"] = Value(profile); changed["temperature"] = OptionalDecimal(temperature, "Temperature", 0, 5) is double tempVal ? JsonValue.Create(tempVal) : null; changed["top_p"] = OptionalDecimal(topP, "Top P", 0, 1) is double topPVal ? JsonValue.Create(topPVal) : null; changed["top_k"] = OptionalNumber(topK, "Top K", 0, 100000) is int topKVal ? JsonValue.Create(topKVal) : null; changed["min_p"] = OptionalDecimal(minP, "Min P", 0, 1) is double minPVal ? JsonValue.Create(minPVal) : null;
-            await SaveConfig(c => { var models = J.A(c, "models"); int index = models.ToList().FindIndex(x => J.S(x, "id") == id); if (index < 0) throw new InvalidOperationException("此模型已被移除，請重新整理模型庫。"); models[index] = changed; });
+            await SaveConfig(c =>
+            {
+                var models = J.A(c, "models");
+                var target = models.FirstOrDefault(x => J.S(x, "id") == id) as JsonObject;
+                if (target is null) throw new InvalidOperationException("此模型已被移除，請重新整理模型庫。");
+                CopyFields(target, changed, "name", "path", "context", "cpu_threads", "gpu_layers", "auto_fit", "fit_target_enabled", "fit_target_mib", "cache_type", "mtp", "mtp_source", "mtp_draft_path", "mtp_draft_max", "vision", "mmproj", "keep_loaded", "idle_minutes", "default_profile_id", "temperature", "top_p", "top_k", "min_p");
+            });
+            ShowNotice(J.S(status, "model_id") == id && J.B(status, "pending_config")
+                ? "模型設定已儲存。此模型目前仍以舊的載入參數執行；按「載入此模型」即可重新載入並套用。"
+                : "模型設定已儲存。");
         }
         pendingSave = Save;
         panel.Children.Add(ActionRow(Button("儲存模型設定", Save, true), Button("設為預設模型", async () => { await Save(); await SaveConfig(c => c["default_model_id"] = id); ShowNotice("已設為預設模型。"); }), Button("載入此模型", async () => { await Save(); await api!.Post("/manager/load", new JsonObject { ["model_id"] = id }); ShowNotice("已要求載入模型。"); await Poll(); })));
