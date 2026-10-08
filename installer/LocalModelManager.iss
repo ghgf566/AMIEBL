@@ -22,6 +22,9 @@ PrivilegesRequired=lowest
 ArchitecturesInstallIn64BitMode=x64
 WizardStyle=modern
 Uninstallable=yes
+; Critical for upgrading from the old installer: do not inherit its recursive
+; UninstallDelete rules through Inno Setup's default appended uninstall log.
+UninstallLogMode=overwrite
 UninstallDisplayIcon={app}\manager.ico
 
 [Files]
@@ -37,6 +40,18 @@ Name: "{group}\解除安裝 Local Model Manager"; Filename: "{uninstallexe}"
 Type: files; Name: "{app}\installed.flag"
 
 [Code]
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  AppFolder: String;
+begin
+  Result := '';
+  AppFolder := ExpandConstant('{app}');
+  if FileExists(AddBackslash(AppFolder) + 'portable.flag') and
+     not FileExists(AddBackslash(AppFolder) + 'installed.flag') and
+     not FileExists(AddBackslash(AppFolder) + 'unins000.exe') then
+    Result := '此資料夾屬於既有 Portable；請選擇另一個安裝位置，以免改變 Portable 資料使用方式。';
+end;
+
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
   if CurStep = ssPostInstall then
