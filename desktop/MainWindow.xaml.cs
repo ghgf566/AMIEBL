@@ -439,13 +439,24 @@ public partial class MainWindow : Window
         customReserve.Unchecked += (_, _) => RefreshGpuSettings();
         RefreshGpuSettings();
         var cache = Choice(panel, "KV cache 精度", J.S(model, "cache_type", "q4_0"), ("f16", "f16 · 較高精度"), ("q8_0", "q8_0 · 均衡"), ("q4_0", "q4_0 · 較省記憶體"));
-        var mtp = Check(panel, "啟用 MTP（模型與引擎需支援）", J.B(model, "mtp"));
+        string mtpCapability = J.S(model, "mtp_capability", "unknown");
+        bool mtpAvailable = mtpCapability == "available";
+        var mtp = Check(panel, "啟用 MTP", mtpAvailable && J.B(model, "mtp"));
+        mtp.IsEnabled = mtpAvailable;
+        var mtpStatus = Text(mtpCapability switch
+        {
+            "available" => $"已從 GGUF 偵測到 MTP / NextN 權重（{J.S(model, "mtp_layers", "1")} 層）。是否能使用仍取決於目前 llama.cpp 對此架構的支援。",
+            "incomplete" => "GGUF 宣告了 MTP / NextN，但沒有找到對應 tensor；為避免載入失敗，MTP 已停用。",
+            "unavailable" => "此 GGUF 未包含 MTP / NextN head，因此無法啟用 MTP。",
+            _ => "尚未能確認此 GGUF 是否包含 MTP / NextN head；為安全起見目前停用 MTP。"
+        }, 11, true);
+        panel.Children.Add(mtpStatus);
         var mtpSettings = new StackPanel { Margin = new Thickness(16, 0, 0, 0) };
-        var mtpDraftMax = FieldWithHint(mtpSettings, "MTP 最大猜測 Token 數（spec-draft-n-max）", J.S(model, "mtp_draft_max", ""), "每次投機預測最多嘗試猜測的 token 數量。\n\n• 什麼是 MTP？\n  多 Token 預測技術。模型一次往前猜測多個字詞，若猜中就能顯著提升打字速度（最高快 1.5~2 倍）。\n\n• 典型設置：\n  通常設 2 或 3（llama.cpp 預設 3，官方 Qwen/DeepSeek MTP 模組建議 2 或 3）。\n\n• 範圍：1 ~ 16\n  - 調低（如 1 或 2）：保守穩定，猜中率高，幾乎不浪費算力。\n  - 調高（如 4 以上）：若任務很規律且猜中率高會更快，但猜不中會浪費驗證算力導致變慢。\n\n• 保留空白或 auto：使用預設值（2）。", "auto（預設 2）");
+        var mtpDraftMax = FieldWithHint(mtpSettings, "MTP 最大猜測 Token 數（spec-draft-n-max）", J.S(model, "mtp_draft_max", ""), "每次投機預測最多嘗試猜測的 token 數量。\n\n• 什麼是 MTP？\n  多 Token 預測技術。模型一次往前猜測多個字詞，若猜中就能顯著提升打字速度。\n\n• 典型設置：\n  通常設 2 或 3。\n\n• 範圍：1 ~ 16\n  - 調低（如 1 或 2）：保守穩定，猜中率高。\n  - 調高（如 4 以上）：若猜不中可能浪費驗證算力。\n\n• 保留空白或 auto：使用 AMIEBL 預設值（2）。", "auto（預設 2）");
         panel.Children.Add(mtpSettings);
         void RefreshMtpSettings()
         {
-            mtpSettings.Visibility = mtp.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
+            mtpSettings.Visibility = mtpAvailable && mtp.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
         }
         mtp.Checked += (_, _) => RefreshMtpSettings();
         mtp.Unchecked += (_, _) => RefreshMtpSettings();
@@ -464,7 +475,7 @@ public partial class MainWindow : Window
         panel.Children.Add(new Expander { Header = "進階採樣與能力設定", Content = advanced });
         async Task Save()
         {
-            var changed = Clone(model); changed["name"] = Required(name, "模型名稱"); changed["path"] = Required(path, "模型路徑"); changed["context"] = Number(context, "上下文容量", 512); changed["gpu_layers"] = autoFit.IsChecked == true ? J.I(model, "gpu_layers", -1) : Number(gpu, "GPU 層數", -1); changed["auto_fit"] = autoFit.IsChecked == true; changed["fit_target_enabled"] = customReserve.IsChecked == true; changed["fit_target_mib"] = Number(reserve, "預留顯示記憶體"); changed["cache_type"] = Value(cache); changed["mtp"] = mtp.IsChecked == true; changed["mtp_draft_max"] = mtp.IsChecked == true && OptionalNumber(mtpDraftMax, "MTP 最大猜測 Token", 1, 64) is int draftVal ? JsonValue.Create(draftVal) : null; changed["vision"] = vision.IsChecked == true; changed["mmproj"] = projector.Text.Trim(); changed["keep_loaded"] = keep.IsChecked == true; changed["idle_minutes"] = string.IsNullOrWhiteSpace(idle.Text) ? null : JsonValue.Create(Number(idle, "閒置卸載分鐘", 1)); changed["default_profile_id"] = Value(profile); changed["temperature"] = OptionalDecimal(temperature, "Temperature", 0, 5) is double tempVal ? JsonValue.Create(tempVal) : null; changed["top_p"] = OptionalDecimal(topP, "Top P", 0, 1) is double topPVal ? JsonValue.Create(topPVal) : null; changed["top_k"] = OptionalNumber(topK, "Top K", 0, 100000) is int topKVal ? JsonValue.Create(topKVal) : null; changed["min_p"] = OptionalDecimal(minP, "Min P", 0, 1) is double minPVal ? JsonValue.Create(minPVal) : null; changed["reasoning_supported"] = reasoning.IsChecked == true; changed["reasoning_efforts"] = new JsonArray(efforts.Text.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Select(x => (JsonNode?)JsonValue.Create(x)).ToArray());
+            var changed = Clone(model); changed["name"] = Required(name, "模型名稱"); changed["path"] = Required(path, "模型路徑"); changed["context"] = Number(context, "上下文容量", 512); changed["gpu_layers"] = autoFit.IsChecked == true ? J.I(model, "gpu_layers", -1) : Number(gpu, "GPU 層數", -1); changed["auto_fit"] = autoFit.IsChecked == true; changed["fit_target_enabled"] = customReserve.IsChecked == true; changed["fit_target_mib"] = Number(reserve, "預留顯示記憶體"); changed["cache_type"] = Value(cache); changed["mtp"] = mtpAvailable && mtp.IsChecked == true; changed["mtp_draft_max"] = mtpAvailable && mtp.IsChecked == true && OptionalNumber(mtpDraftMax, "MTP 最大猜測 Token", 1, 64) is int draftVal ? JsonValue.Create(draftVal) : null; changed["vision"] = vision.IsChecked == true; changed["mmproj"] = projector.Text.Trim(); changed["keep_loaded"] = keep.IsChecked == true; changed["idle_minutes"] = string.IsNullOrWhiteSpace(idle.Text) ? null : JsonValue.Create(Number(idle, "閒置卸載分鐘", 1)); changed["default_profile_id"] = Value(profile); changed["temperature"] = OptionalDecimal(temperature, "Temperature", 0, 5) is double tempVal ? JsonValue.Create(tempVal) : null; changed["top_p"] = OptionalDecimal(topP, "Top P", 0, 1) is double topPVal ? JsonValue.Create(topPVal) : null; changed["top_k"] = OptionalNumber(topK, "Top K", 0, 100000) is int topKVal ? JsonValue.Create(topKVal) : null; changed["min_p"] = OptionalDecimal(minP, "Min P", 0, 1) is double minPVal ? JsonValue.Create(minPVal) : null; changed["reasoning_supported"] = reasoning.IsChecked == true; changed["reasoning_efforts"] = new JsonArray(efforts.Text.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Select(x => (JsonNode?)JsonValue.Create(x)).ToArray());
             await SaveConfig(c => { var models = J.A(c, "models"); int index = models.ToList().FindIndex(x => J.S(x, "id") == id); if (index < 0) throw new InvalidOperationException("此模型已被移除，請重新整理模型庫。"); models[index] = changed; });
         }
         pendingSave = Save;
@@ -485,7 +496,7 @@ public partial class MainWindow : Window
     {
         var picker = new OpenFileDialog { Filter = filter, CheckFileExists = true }; if (picker.ShowDialog(this) == true) input.Text = picker.FileName;
     }
-    private static JsonObject NewModel(string path, string name, string id) => new() { ["id"] = id, ["name"] = name, ["path"] = path, ["mmproj"] = "", ["vision"] = false, ["context"] = 32768, ["gpu_layers"] = -1, ["auto_fit"] = true, ["fit_target_enabled"] = false, ["fit_target_mib"] = 2048, ["cache_type"] = "q8_0", ["mtp"] = false, ["mtp_draft_max"] = null, ["keep_loaded"] = false, ["idle_minutes"] = null, ["default_profile_id"] = "coding", ["temperature"] = null, ["top_p"] = null, ["top_k"] = null, ["min_p"] = null, ["reasoning_supported"] = false, ["reasoning_efforts"] = new JsonArray() };
+    private static JsonObject NewModel(string path, string name, string id) => new() { ["id"] = id, ["name"] = name, ["path"] = path, ["mmproj"] = "", ["vision"] = false, ["context"] = 32768, ["gpu_layers"] = -1, ["auto_fit"] = true, ["fit_target_enabled"] = false, ["fit_target_mib"] = 2048, ["cache_type"] = "q8_0", ["mtp"] = false, ["mtp_draft_max"] = null, ["mtp_capability"] = "unknown", ["mtp_layers"] = 0, ["keep_loaded"] = false, ["idle_minutes"] = null, ["default_profile_id"] = "coding", ["temperature"] = null, ["top_p"] = null, ["top_k"] = null, ["min_p"] = null, ["reasoning_supported"] = false, ["reasoning_efforts"] = new JsonArray() };
     private async Task AddModel(string path, string name)
     {
         if (J.A(config, "models").Any(x => string.Equals(J.S(x, "path"), path, StringComparison.OrdinalIgnoreCase))) { ShowNotice("此模型已在模型庫中。"); return; }
