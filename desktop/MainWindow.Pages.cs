@@ -244,7 +244,7 @@ public partial class MainWindow
         var defaultProfile = Choice(modelBehavior, "預設使用模式", J.S(config, "default_profile_id", "coding"), J.A(config, "profiles").Select(x => (J.S(x, "id"), J.S(x, "name"))).ToArray());
         modelBehavior.Children.Add(Text("模型可另設自己的閒置時間。Agent 執行工具時可能暫時沒有推理請求，建議保留足夠等待時間。", 12, true));
         root.Children.Add(Card(modelBehavior));
-        var service = Section("本機連線與引擎", "修改連接埠需完全結束並重新開啟管理器；引擎位置在下次載入時生效。");
+        var service = Section("本機連線與引擎", "Agent 連線埠需完全結束並重新開啟管理器；llama.cpp 引擎位置與模型引擎連接埠會在下一次模型重新載入時生效。");
         var engine = Field(service, "llama.cpp 資料夾", J.S(config, "engine_dir"));
         service.Children.Add(Button("選擇引擎資料夾", () => { var dialog = new OpenFolderDialog { Title = "選擇 llama.cpp 資料夾" }; if (dialog.ShowDialog(this) == true) engine.Text = dialog.FolderName; return Task.CompletedTask; }));
         var port = Field(service, "Agent 連線埠", J.S(config, "api_port", "8080"));
@@ -263,6 +263,8 @@ public partial class MainWindow
             if (publicPort == privatePort) throw new InvalidOperationException("Agent 與模型引擎必須使用不同的連接埠。");
             bool enabled = autoStart.IsChecked == true;
             bool oldAuto = J.B(config, "auto_start");
+            string oldEngine = J.S(config, "engine_dir");
+            int oldEnginePort = J.I(config, "engine_port", 8081);
             int idleValue = Number(idle, "閒置卸載分鐘", 0, 10080), daysValue = Number(days, "紀錄保留天數", 1, 365);
             string engineValue = Required(engine, "引擎資料夾");
             await SaveConfig(c => { c["auto_start"] = enabled; c["start_hidden"] = hidden.IsChecked == true; c["close_to_tray"] = closeTray.IsChecked == true; c["preload"] = preload.IsChecked == true; c["idle_minutes"] = idleValue; c["default_profile_id"] = Value(defaultProfile); c["engine_dir"] = engineValue; c["api_port"] = publicPort; c["engine_port"] = privatePort; c["log_request_bodies"] = bodies.IsChecked == true; c["log_retention_days"] = daysValue; });
@@ -272,7 +274,11 @@ public partial class MainWindow
                 await SaveConfig(c => c["auto_start"] = oldAuto);
                 throw new InvalidOperationException("其他設定已儲存，但無法變更登入自動啟動：" + ex.Message);
             }
-            ShowNotice(publicPort != App.Port ? "設定已儲存。新的連接埠會在完全結束並重新開啟後生效，Agent 的 API 位址也需更新。" : "系統設定已儲存。啟動相關設定會在下次開啟時生效。");
+            ShowNotice(publicPort != App.Port
+                ? "設定已儲存。新的 Agent 連線埠會在完全結束並重新開啟後生效，Agent 的 API 位址也需更新。"
+                : (oldEnginePort != privatePort || !string.Equals(oldEngine, engineValue, StringComparison.OrdinalIgnoreCase))
+                    ? "系統設定已儲存。llama.cpp 引擎位置／模型引擎連接埠會在下一個推理請求前自動重新載入模型，或可手動重新載入。"
+                    : "系統設定已儲存。啟動相關設定會在下次開啟時生效。");
         }
         pendingSave = Save;
         root.Children.Add(ActionRow(Button("儲存系統設定", Save, true), Button("完全結束管理器", RequestExit)));
