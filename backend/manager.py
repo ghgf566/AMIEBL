@@ -155,6 +155,33 @@ def profile_agent_defaults(profile_id: str, name: str) -> dict:
         "agent_instructions": "Answer the user's request clearly and use the available tools only as needed.",
     }))
 
+def normalize_startup_config(value: Any) -> Any:
+    """Repair only upgrade-safe inconsistencies before strict validation.
+
+    PUT/import remain strict. This path is used only when opening an existing
+    on-disk config so a value written by an older AMIEBL version cannot make
+    the new backend unstartable before its migration code gets a chance to run.
+    """
+    if not isinstance(value, dict):
+        return value
+    result = copy.deepcopy(value)
+    models = result.get("models")
+    if not isinstance(models, list):
+        return result
+    for model in models:
+        if not isinstance(model, dict):
+            continue
+        context = model.get("context")
+        native = model.get("native_context")
+        if (
+            isinstance(context, (int, float)) and not isinstance(context, bool)
+            and isinstance(native, (int, float)) and not isinstance(native, bool)
+            and math.isfinite(context) and math.isfinite(native)
+            and native > 0 and context > native
+        ):
+            model["context"] = int(native) if int(native) == native else native
+    return result
+
 def validate_config(value: Any) -> dict:
     if not isinstance(value, dict):
         raise ValueError("設定必須是 JSON 物件。")
@@ -740,10 +767,10 @@ class Manager:
         self.config_path = data / "config.json"
         if self.config_path.exists():
             raw_config = json.loads(self.config_path.read_text(encoding="utf-8-sig"))
-            self.config = validate_config(raw_config)
-            # Persist newly introduced defaults immediately. This keeps the
-            # configuration returned by GET and the on-disk snapshot identical
-            # after an upgrade, so a rejected edit is truly atomic.
+            self.config = validate_config(normalize_startup_config(raw_config))
+            # Persist newly introduced defaults and upgrade-safe normalization
+            # immediately. PUT/import stay strict; only startup may repair a
+            # configuration written by an older version.
             if self.config != raw_config:
                 atomic_json(self.config_path, self.config)
         else:
