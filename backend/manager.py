@@ -1289,7 +1289,7 @@ class Manager:
                 body.setdefault(key, val)
         kwargs = body.get("chat_template_kwargs") or {}
         reasoning = body.get("reasoning") if isinstance(body.get("reasoning"), dict) else {}
-        explicit = any(k in body for k in ("reasoning_effort", "thinking_budget_tokens")) or "effort" in reasoning or any(k in kwargs for k in ("enable_thinking", "thinking_budget", "thinking_budget_tokens"))
+        explicit = any(k in body for k in ("reasoning_effort", "thinking_budget_tokens")) or "effort" in reasoning or any(k in kwargs for k in ("enable_thinking", "thinking", "add_nothink_token", "thinking_budget", "thinking_budget_tokens"))
         answer_reserve = min(512, max(1, cap // 4))
         max_budget = max(0, cap - answer_reserve)
         if explicit:
@@ -1459,7 +1459,7 @@ class Manager:
         if live["engine_dir"] != self.config["engine_dir"] or live["engine_port"] != (self.engine_port_override or self.config["engine_port"]):
             return True
         current = next((m for m in self.config["models"] if m["id"] == live["model"]["id"]), {})
-        ignore = {"keep_loaded", "idle_minutes", "default_profile_id", "name", "temperature", "top_p", "top_k", "min_p", "reasoning_supported", "reasoning_efforts"}
+        ignore = {"keep_loaded", "idle_minutes", "default_profile_id", "name", "temperature", "top_p", "top_k", "min_p", "reasoning_supported", "reasoning_capability", "reasoning_efforts", "reasoning_default_effort", "reasoning_budget_supported", "reasoning_toggle_keys", "reasoning_detection", "native_context", "mtp_capability", "mtp_layers"}
         return {k:v for k,v in current.items() if k not in ignore} != {k:v for k,v in live["model"].items() if k not in ignore}
 
     def idle_limit(self):
