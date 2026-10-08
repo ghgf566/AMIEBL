@@ -25,7 +25,8 @@ public partial class MainWindow
         {
             var label = new StackPanel();
             label.Children.Add(Text(J.S(item, "name"), 15));
-            label.Children.Add(Text(ThinkingName(J.S(item, "thinking_mode")) + " · " + J.S(item, "thinking_budget") + " 思考 tokens", 11, true));
+            string budgetLabel = J.S(item, "budget_mode", "custom") == "auto" ? "自動預算" : J.S(item, "thinking_budget") + " 思考 tokens";
+            label.Children.Add(Text(ThinkingName(J.S(item, "thinking_mode")) + " · " + ReasoningLevelName(J.S(item, "reasoning_level", "balanced")) + " · " + budgetLabel, 11, true));
             list.Items.Add(new ListBoxItem { Content = label, Tag = item });
         }
         left.Children.Add(list);
@@ -44,7 +45,7 @@ public partial class MainWindow
         {
             if (!await LeaveEditor()) return;
             string id = "profile-" + Guid.NewGuid().ToString("N")[..8];
-            await SaveConfig(c => J.A(c, "profiles").Add(new JsonObject { ["id"] = id, ["name"] = "新的使用模式", ["thinking_mode"] = "auto", ["effort"] = "medium", ["thinking_budget"] = 1536, ["max_tokens"] = 8192, ["agent_sync_mode"] = "preserve", ["agent_name"] = "新的使用模式", ["agent_description"] = "AMIEBL local-model agent.", ["agent_tools"] = new JsonArray(JsonValue.Create("read"), JsonValue.Create("search"), JsonValue.Create("web")), ["agent_instructions"] = "Answer the user's request clearly and use the available tools only as needed." }));
+            await SaveConfig(c => J.A(c, "profiles").Add(new JsonObject { ["id"] = id, ["name"] = "新的使用模式", ["thinking_mode"] = "auto", ["reasoning_level"] = "balanced", ["budget_mode"] = "auto", ["thinking_budget"] = 1536, ["max_tokens"] = 8192, ["agent_sync_mode"] = "preserve", ["agent_name"] = "新的使用模式", ["agent_description"] = "AMIEBL local-model agent.", ["agent_tools"] = new JsonArray(JsonValue.Create("read"), JsonValue.Create("search"), JsonValue.Create("web")), ["agent_instructions"] = "Answer the user's request clearly and use the available tools only as needed." }));
             ShowPage("使用模式");
             SelectProfile(id);
         }, true)));
@@ -63,32 +64,42 @@ public partial class MainWindow
     }
 
     private static string ThinkingName(string mode) => mode switch { "auto" => "自動判斷", "on" => "固定思考", "off" => "關閉思考", "model" => "跟隨模型預設", _ => mode };
+    private static string ReasoningLevelName(string level) => level switch { "light" => "輕量", "balanced" => "均衡", "deep" => "深入", "extreme" => "極深", _ => level };
 
     private UIElement BuildProfileEditor(JsonObject profile)
     {
         string id = J.S(profile, "id");
-        var panel = Section("使用模式設定", "思考預算是上限，模型可以提早結束。每次請求會顯示實際套用結果。");
+        var panel = Section("使用模式設定", "Profile 描述你想要的行為；AMIEBL 會依每顆模型實際偵測到的 reasoning 能力轉譯成原生 effort、token budget 或單純思考開關。");
         var name = Field(panel, "顯示名稱", J.S(profile, "name"));
         Field(panel, "模式識別（供 Agent 指定）", id, true);
         var mode = Choice(panel, "思考策略", J.S(profile, "thinking_mode", "auto"), ("auto", "自動判斷 · 本機快速規則"), ("on", "固定開啟思考"), ("off", "固定關閉思考"), ("model", "跟隨模型預設"));
-        var effort = Choice(panel, "思考程度／自動模式上限", J.S(profile, "effort", "medium"), ("low", "簡短 · low"), ("medium", "均衡 · medium"), ("xhigh", "深入 · xhigh"));
-        var budget = Field(panel, "思考預算上限（tokens）", J.S(profile, "thinking_budget", "1536"));
+        var level = Choice(panel, "AMIEBL 思考強度", J.S(profile, "reasoning_level", "balanced"),
+            ("light", "輕量 · 優先速度"), ("balanced", "均衡"), ("deep", "深入"), ("extreme", "極深 · 優先推理"));
+        var budgetMode = Choice(panel, "思考 Token 預算", J.S(profile, "budget_mode", "custom"),
+            ("auto", "自動 · 依模型能力與思考強度"), ("custom", "自訂硬上限"));
+        var budgetPanel = new StackPanel { Margin = new Thickness(16, 0, 0, 0) };
+        var budget = Field(budgetPanel, "自訂思考預算上限（tokens）", J.S(profile, "thinking_budget", "1536"));
+        panel.Children.Add(budgetPanel);
         var max = Field(panel, "整次生成上限（包含思考與回答）", J.S(profile, "max_tokens", "8192"));
         var summary = Text("", 12, true);
         panel.Children.Add(summary);
         void RefreshSummary()
         {
             bool controls = Value(mode) is "auto" or "on";
-            effort.IsEnabled = controls; budget.IsEnabled = controls;
+            level.IsEnabled = controls; budgetMode.IsEnabled = controls;
+            budgetPanel.Visibility = controls && Value(budgetMode) == "custom" ? Visibility.Visible : Visibility.Collapsed;
             summary.Text = Value(mode) switch
             {
-                "auto" => "管理器只檢查最近的使用者要求，以本機規則快速判斷是否開啟思考，不會額外呼叫模型。明確的問候、翻譯與改寫會直接回答；除錯、分析、規劃等任務會使用此模式的思考程度與預算；無法明確分類時採用此模式預設。",
-                "off" => "要求支援此功能的模型直接回答。未支援思考開關的模型會保留原本行為。",
-                "model" => "沿用模型模板的預設行為，不代表每一題都自動開關思考。",
-                _ => "使用指定的思考程度與預算；實際可用程度取決於該模型的能力設定。"
+                "auto" => "AMIEBL 先用本機快速規則判斷是否需要思考；若需要，再把「" + ReasoningLevelName(Value(level)) + "」轉成該模型真正支援的控制方式。",
+                "off" => "若模型可切換 reasoning，要求直接回答；若模型屬於固定 reasoning，AMIEBL 不會硬塞不支援的關閉參數。",
+                "model" => "完全沿用模型 Chat Template 的預設 reasoning 行為，不套用 AMIEBL 思考強度。",
+                _ => "固定要求思考；AMIEBL 會優先使用模型原生 reasoning effort，沒有原生 effort 時再以 token budget 或思考開關實現。"
             };
         }
-        mode.SelectionChanged += (_, _) => RefreshSummary(); RefreshSummary();
+        mode.SelectionChanged += (_, _) => RefreshSummary();
+        level.SelectionChanged += (_, _) => RefreshSummary();
+        budgetMode.SelectionChanged += (_, _) => RefreshSummary();
+        RefreshSummary();
 
         var agent = Section("VS Code Agent", "第一次沒有 Agent 檔時會由 AMIEBL 建立；之後可選擇保留 VS Code 手動修改，或由 AMIEBL 完整管理。");
         var agentSync = Choice(agent, "同步方式", J.S(profile, "agent_sync_mode", "preserve"),
@@ -113,10 +124,11 @@ public partial class MainWindow
         async Task Save()
         {
             var changed = Clone(profile);
-            changed["name"] = Required(name, "模式名稱"); changed["thinking_mode"] = Value(mode); changed["effort"] = Value(effort);
+            changed["name"] = Required(name, "模式名稱"); changed["thinking_mode"] = Value(mode); changed["reasoning_level"] = Value(level); changed["budget_mode"] = Value(budgetMode);
             int budgetValue = Number(budget, "思考預算", 0, 1_000_000), maxValue = Number(max, "整次生成上限", 256, 1_000_000);
-            if (Value(mode) is "auto" or "on" && budgetValue > maxValue - 256) throw new InvalidOperationException("整次生成上限需至少比思考預算多 256 tokens，為回答與工具呼叫保留空間。");
+            if (Value(mode) is "auto" or "on" && Value(budgetMode) == "custom" && budgetValue > maxValue - 256) throw new InvalidOperationException("整次生成上限需至少比自訂思考預算多 256 tokens，為回答與工具呼叫保留空間。");
             changed["thinking_budget"] = budgetValue; changed["max_tokens"] = maxValue;
+            changed["effort"] = Value(level) switch { "light" => "low", "balanced" => "medium", "deep" => "high", "extreme" => "xhigh", _ => "medium" }; // 舊版相容欄位
             changed["agent_sync_mode"] = Value(agentSync);
             changed["agent_name"] = Required(agentName, "Agent 顯示名稱");
             changed["agent_description"] = agentDescription.Text.Trim();
@@ -198,7 +210,8 @@ public partial class MainWindow
         text.AppendLine().AppendLine("本次思考策略");
         text.AppendLine("判斷結果  " + DecisionName(J.S(request, "decision", "未提供")));
         text.AppendLine("策略判斷耗時  " + J.Metric(request, "classifier_seconds", " 秒"));
-        text.AppendLine("思考程度  " + J.S(request, "effort", "未指定"));
+        text.AppendLine("AMIEBL 強度  " + ReasoningLevelName(J.S(request, "reasoning_level", "未指定")));
+        text.AppendLine("模型原生 Effort  " + J.S(request, "effort", "未使用"));
         text.AppendLine("思考預算  " + J.Metric(request, "thinking_budget", " tokens", "0"));
         text.AppendLine("思考用量  " + J.Metric(request, "thinking_tokens", " tokens", "0"));
         text.AppendLine("總生成上限  " + J.Metric(request, "max_tokens", " tokens", "0"));
