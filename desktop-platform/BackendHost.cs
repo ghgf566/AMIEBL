@@ -14,12 +14,60 @@ public sealed class BackendHost : IAsyncDisposable
     public BackendHost(string[] arguments)
     {
         this.arguments = arguments;
-        DataDir = Path.GetFullPath(Option("--data-dir") ?? (File.Exists(Path.Combine(AppContext.BaseDirectory,"portable.flag")) ? Path.Combine(AppContext.BaseDirectory,"data") : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"LocalModelManager")));
+        DataDir = ResolveDataDirectory(AppContext.BaseDirectory,
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), Option("--data-dir"));
         Directory.CreateDirectory(DataDir);
         string path = Path.Combine(DataDir,"config.json");
         JsonObject local = File.Exists(path) ? JsonNode.Parse(File.ReadAllText(path))!.AsObject() : new();
         Port = int.TryParse(Option("--port"), out int p) ? p : J.I(local,"api_port",8080);
     }
+
+    // An installed bundle must use per-user data, even if an older installer
+    // mistakenly left portable.flag and data next to the executable.
+    public static string ResolveDataDirectory(string applicationDir, string localAppData, string? explicitDataDir)
+    {
+        if (!string.IsNullOrWhiteSpace(explicitDataDir)) return Path.GetFullPath(explicitDataDir);
+        bool installed = File.Exists(Path.Combine(applicationDir, "installed.flag"));
+        bool portable = File.Exists(Path.Combine(applicationDir, "portable.flag")) && !installed;
+        if (portable) return Path.GetFullPath(Path.Combine(applicationDir, "data"));
+        string destination = Path.GetFullPath(Path.Combine(localAppData, "LocalModelManager"));
+        if (installed) CopyLegacyInstalledData(applicationDir, destination);
+        return destination;
+    }
+
+    private static void CopyLegacyInstalledData(string applicationDir, string destination)
+    {
+        string legacy = Path.Combine(applicationDir, "data");
+        // Do not merge or overwrite an already-initialized user data folder.
+        // The legacy folder is intentionally kept as a recovery copy.
+        if (!Directory.Exists(legacy) || Directory.Exists(destination)) return;
+        string parent = Path.GetDirectoryName(destination)!;
+        Directory.CreateDirectory(parent);
+        string staging = Path.Combine(parent, "LocalModelManager-migration-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            Directory.CreateDirectory(staging);
+            foreach (string source in Directory.EnumerateFiles(legacy, "*", SearchOption.AllDirectories))
+            {
+                string dest = Path.Combine(staging, Path.GetRelativePath(legacy, source));
+                Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
+                File.Copy(source, dest, overwrite: false);
+            }
+            // Stage first, then move atomically within the same volume.
+            Directory.Move(staging, destination);
+        }
+        catch (IOException) when (Directory.Exists(destination))
+        {
+            // Another instance finished migration first; never overwrite it.
+            if (Directory.Exists(staging)) Directory.Delete(staging, recursive: true);
+        }
+        catch (Exception ex)
+        {
+            try { if (Directory.Exists(staging)) Directory.Delete(staging, recursive: true); } catch { }
+            throw new InvalidOperationException("舊版安裝資料搬移失敗；原始 data 資料夾尚在，請先備份並檢查磁碟空間。", ex);
+        }
+    }
+
     public async Task<ManagerClient> Connect()
     {
         await EnsureBackend();
