@@ -54,6 +54,19 @@ class ReleasePackagingSafetyTests(unittest.TestCase):
         self.assertIn("throw", check)
         self.assertNotIn("Remove-Item", check)
 
+    def test_public_engine_bundle_does_not_copy_personal_launcher_or_source_path(self):
+        package = source("package.ps1")
+        self.assertNotIn("engine_source =", package)
+        self.assertNotIn("Copy-Tree ([IO.Path]::GetFullPath($LlamaRoot))", package)
+        self.assertIn("$_.Extension -eq '.dll'", package)
+        self.assertIn("$_.Extension -eq '.exe'", package)
+        self.assertIn("'THIRD-PARTY-NOTICES.md'", package)
+
+    def test_embedded_python_can_import_sibling_backend_modules(self):
+        package = source("package.ps1")
+        self.assertIn("-Filter 'python*._pth'", package)
+        self.assertIn("'../../backend'", package)
+
     def test_apache_license_is_bundled_in_every_distribution(self):
         license_text = source("LICENSE")
         self.assertIn("Apache License", license_text[:100])
