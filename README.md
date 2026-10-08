@@ -193,7 +193,7 @@ cd AMIEBL
 .\package.ps1 -LlamaRoot 'C:\Tools\llama.cpp' -PythonHome 'C:\AMIEBL-build\python-clean' -SelfContained -BuildInstaller -OutputDirectory 'C:\AMIEBL-setup-release'
 ```
 
-正式打包時 `-PythonHome` 應指向乾淨、已安裝 backend/requirements.txt 的執行環境，不要直接複製個人 Python 安裝。可用 `-IsccPath` 指定免安裝編譯器，`-ThirdPartyDirectory` 納入版本對應授權全文。開發測試時 `-PythonHome` 可省略；`-ModelDirectory` 可選擇將模型納入 Portable，否則預設不複製大容量模型。為避免誤刪資料，打包器不會覆蓋已存在的 Portable 輸出資料夾。
+正式打包時 `-PythonHome` 應指向乾淨、已安裝 backend/requirements.txt 的執行環境，不要直接複製個人 Python 安裝。可用 `-IsccPath` 指定免安裝編譯器，`-ThirdPartyDirectory` 納入版本對應授權全文，`-VCRuntimeDirectory` 指向 Visual Studio x64 CRT 的合法可再散布目錄。開發測試時 `-PythonHome` 可省略；`-ModelDirectory` 可選擇將模型納入 Portable，否則預設不複製大容量模型。為避免誤刪資料，打包器不會覆蓋已存在的 Portable 輸出資料夾。
 
 詳見 [安裝與解除安裝說明](installer/README.md)。
 

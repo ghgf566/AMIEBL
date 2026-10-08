@@ -12,6 +12,7 @@ AMIEBL 原始碼適用 Apache License 2.0；此授權不會變更隨附第三方
 | CPython | 3.14.7 Windows x64 embedded runtime | PSF License 及隨附第三方條款；https://www.python.org/ |
 | FastAPI、httpx、uvicorn 及相依套件 | 後端 HTTP 服務；版本見 runtime 的 dist-info | 各自 MIT / BSD / Apache 等條款，保留所有 dist-info 授權與 metadata |
 | .NET runtime | 10.0.12，Windows x64 自包含 | MIT 與 .NET THIRD-PARTY-NOTICES；https://github.com/dotnet/runtime |
+| Microsoft Visual C++ runtime | 14.51.36231 x64 app-local redistributable CRT | Microsoft Visual Studio 授權及可再散布清單；https://aka.ms/vs/18/redistribution |
 | Windows App SDK / WinUI 3 及相依元件 | 1.8.260921001 與建置鎖定套件 | 各 NuGet 元件隨附 Microsoft 授權與 NOTICE；https://github.com/microsoft/WindowsAppSDK |
 | Inno Setup | 6.7.3，安裝／解除安裝執行碼 | Inno Setup license；https://github.com/jrsoftware/issrc |
 

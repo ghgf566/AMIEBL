@@ -6,7 +6,8 @@
     [switch]$SelfContained,
     [switch]$BuildInstaller,
     [string]$IsccPath = '',
-    [string]$ThirdPartyDirectory = ''
+    [string]$ThirdPartyDirectory = '',
+    [string]$VCRuntimeDirectory = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -55,6 +56,13 @@ Get-ChildItem -LiteralPath ([IO.Path]::GetFullPath($LlamaRoot)) -File | Where-Ob
     ($_.Extension -eq '.exe' -and $_.BaseName -match '^(llama|ggml)(-|$)') -or
     $_.Name -match '^(LICENSE|NOTICE|COPYING)([.-]|$)'
 } | ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination $engineTarget }
+if ($VCRuntimeDirectory) {
+    # App-local redistributable CRT DLLs are needed by both WinUI and llama.cpp.
+    Get-ChildItem -LiteralPath ([IO.Path]::GetFullPath($VCRuntimeDirectory)) -File -Filter '*.dll' | ForEach-Object {
+        Copy-Item -LiteralPath $_.FullName -Destination $portable
+        Copy-Item -LiteralPath $_.FullName -Destination $engineTarget
+    }
+}
 
 if ($ModelDirectory) {
     $modelSource = [IO.Path]::GetFullPath($ModelDirectory)
