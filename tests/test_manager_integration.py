@@ -785,8 +785,22 @@ class ManagerIntegration(unittest.TestCase):
         self.load()
         argv = self.events("start")[-1]["argv"]
         self.assertEqual(argv[argv.index("--mmproj") + 1], str(projector))
-        self.assertEqual(argv[argv.index("--image-min-tokens") + 1], "1024")
+        self.assertNotIn("--image-min-tokens", argv)
+        self.assertNotIn("--no-reasoning-preserve", argv)
 
+    def test_invalid_vision_projector_is_rejected_before_engine_start(self):
+        projector = self.run_dir / "not-a-projector.gguf"
+        projector.write_bytes(b"not-gguf")
+        config = self.get("/manager/config")
+        model = next(x for x in config["models"] if x["id"] == "test-model")
+        model.update(vision=True, mmproj=str(projector), auto_fit=False)
+        response = self.api("PUT", "/manager/config", json=config)
+        self.assertEqual(response.status_code, 200, response.text)
+        response = self.api("POST", "/manager/load", json={"model_id": "test-model"})
+        self.assertEqual(response.status_code, 200, response.text)
+        eventually(lambda: self.get("/manager/status")["state"] == "error")
+        self.assertEqual(self.events("start"), [])
+        self.assertIn("不是有效的 GGUF", self.get("/manager/status")["last_error"])
     def test_inactive_model_subsettings_do_not_create_false_pending_reload(self):
         self.load()
         config = self.get("/manager/config")
