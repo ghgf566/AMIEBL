@@ -38,7 +38,7 @@ public partial class MainWindow
         {
             if (restoring || list.SelectedItem is not ListBoxItem selected || selected.Tag is not string profileId) return;
             if (!await LeaveEditor()) { restoring = true; list.SelectedItem = previous; restoring = false; return; }
-            previous = selected;
+            previous = selected; workspace.SelectedProfileId = profileId;
             var profile = J.A(config, "profiles").OfType<JsonObject>().FirstOrDefault(x => J.S(x, "id") == profileId);
             if (profile is null) throw new InvalidOperationException("此使用模式已被移除，請重新整理。");
             editor.Content = Scroll(BuildProfileEditor(profile)); dirty = false;

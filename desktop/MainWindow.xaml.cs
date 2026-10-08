@@ -24,19 +24,21 @@ namespace LocalModelManager;
 public partial class MainWindow : Window
 {
     private ManagerClient? api;
-    private JsonObject config = new();
-    private JsonObject status = new();
+    private readonly WorkspaceViewModel workspace = new();
+    private JsonObject config { get => workspace.Config; set => workspace.Config = value; }
+    private JsonObject status { get => workspace.Status; set => workspace.Status = value; }
+    private bool dirty { get => workspace.Editor.IsDirty; set => workspace.Editor.IsDirty = value; }
     private JsonArray requests = new();
     private readonly DispatcherTimer timer = new() { Interval = TimeSpan.FromSeconds(1.5) };
     private readonly Forms.NotifyIcon tray;
-    private bool polling, exiting, dirty;
+    private bool polling, exiting, navigating;
     private string currentPage = "總覽";
     private readonly Dictionary<string, Button> navButtons = new();
     private readonly Dictionary<string, TextBlock> live = new();
     private ListBox? taskList;
     private TextBox? taskDetail, logsText;
     private string? selectedTask;
-    private Func<Task>? pendingSave;
+    private Func<Task>? pendingSave { get => workspace.Editor.Save; set => workspace.Editor.Save = value; }
     private int failedPolls;
     private string? lastReadyPid;
     private static readonly string[] Pages = ["總覽", "模型庫", "使用模式", "任務與紀錄", "系統"];
@@ -46,11 +48,23 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        DataContext = workspace;
+        workspace.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(workspace.IsBusy))
+            { PageContent.IsEnabled = !workspace.IsBusy; Navigation.IsEnabled = !workspace.IsBusy; }
+        };
         for (int i = 0; i < Pages.Length; i++)
         {
             string page = Pages[i];
             var button = new Button { Content = Glyphs[i] + "   " + page, HorizontalContentAlignment = HorizontalAlignment.Left, Background = Brushes.Transparent, BorderThickness = new Thickness(0), Padding = new Thickness(14, 13, 14, 13), Margin = new Thickness(0, 0, 0, 7) };
-            button.Click += async (_, _) => await Guard(async () => { if (await LeaveEditor()) ShowPage(page); });
+            button.Click += async (_, _) => await Guard(async () =>
+            {
+                if (navigating || workspace.IsBusy) return;
+                navigating = true;
+                try { if (await LeaveEditor()) ShowPage(page); }
+                finally { navigating = false; }
+            });
             Navigation.Children.Add(button); navButtons[page] = button;
         }
         tray = new Forms.NotifyIcon { Icon = MakeTrayIcon(), Text = "Local Model Manager · 正在啟動", Visible = true };
@@ -69,7 +83,7 @@ public partial class MainWindow : Window
 
     public async Task Connect(ManagerClient client)
     {
-        api = client;
+        api = client; workspace.Api = client;
         config = await api.Get("/manager/config");
         await Poll(); ShowPage("總覽"); timer.Start();
         if (J.B(status, "pending_restart")) ShowNotice("Agent 連線埠已變更；需完全結束並重新開啟管理器才會生效。");
@@ -122,7 +136,7 @@ public partial class MainWindow : Window
                 config = await api.Get("/manager/config");
                 if (currentPage == "模型庫" && !dirty)
                 {
-                    string selectedModel = J.S(status, "model_id", DefaultModel());
+                    string selectedModel = workspace.SelectedModelId ?? J.S(status, "model_id", DefaultModel());
                     ShowPage("模型庫");
                     SelectModel(selectedModel);
                 }
@@ -196,10 +210,30 @@ public partial class MainWindow : Window
     private async Task SaveConfig(Action<JsonObject> edit)
     {
         if (api is null) return;
-        JsonObject latest = await api.Get("/manager/config"); edit(latest); await api.Put("/manager/config", latest);
-        var refreshed = await Task.WhenAll(api.Get("/manager/config"), api.Get("/manager/status"));
-        config = refreshed[0]; status = refreshed[1]; dirty = false;
+        try { await workspace.SaveConfig(edit); }
+        finally { RefreshEditorList(); }
         ShowNotice("設定已儲存。"); await Poll();
+    }
+    private void RefreshEditorList()
+    {
+        if (PageContent.Content is not Grid grid || grid.Tag is not ListBox list) return;
+        foreach (ListBoxItem item in list.Items)
+        {
+            string id = item.Tag?.ToString() ?? "";
+            var label = new StackPanel();
+            if (currentPage == "模型庫" && workspace.Model(id) is ModelSettings model)
+            {
+                label.Children.Add(Text(model.Name, 14));
+                label.Children.Add(Text(id == DefaultModel() ? "預設模型" : Path.GetFileName(model.Path), 11, true));
+            }
+            else if (currentPage == "使用模式" && workspace.Profile(id) is ProfileSettings profile)
+            {
+                label.Children.Add(Text(profile.Name, 15));
+                label.Children.Add(Text(ThinkingName(profile.ThinkingMode) + " · " + ReasoningLevelName(J.S(profile.Data, "reasoning_level", "balanced")) + " · " + (profile.BudgetMode == "auto" ? "自動預算" : profile.ThinkingBudget + " 思考 tokens"), 11, true));
+            }
+            else continue;
+            item.Content = label;
+        }
     }
     private static JsonObject Clone(JsonNode node) => node.DeepClone().AsObject();
     private static void CopyFields(JsonObject target, JsonObject source, params string[] keys)
@@ -408,7 +442,7 @@ public partial class MainWindow : Window
         {
             if (restoring || list.SelectedItem is not ListBoxItem selected || selected.Tag is not string modelId) return;
             if (!await LeaveEditor()) { restoring = true; list.SelectedItem = previous; restoring = false; return; }
-            previous = selected;
+            previous = selected; workspace.SelectedModelId = modelId;
             // LeaveEditor may save and replace config; resolve after it finishes.
             var model = J.A(config, "models").OfType<JsonObject>().FirstOrDefault(x => J.S(x, "id") == modelId);
             if (model is null) throw new InvalidOperationException("此模型已被移除，請重新整理模型庫。");

@@ -12,5 +12,6 @@
     <ApplicationIcon>..\assets\manager.ico</ApplicationIcon>
     <Version>1.0.0</Version>
   </PropertyGroup>
+  <ItemGroup><Compile Remove="ManagerClient.cs" /><ProjectReference Include="../desktop-core/AMIEBL.Desktop.Core.csproj" /></ItemGroup>
   <ItemGroup><Content Include="..\assets\manager.ico" Link="assets\manager.ico" CopyToOutputDirectory="PreserveNewest" /></ItemGroup>
 </Project>

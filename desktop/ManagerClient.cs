@@ -8,7 +8,7 @@ using System.Threading.Tasks;
 
 namespace LocalModelManager;
 
-public sealed class ManagerClient : IDisposable
+public sealed class ManagerClient : IDisposable, IManagerApi
 {
     private readonly HttpClient client;
     public string BaseUrl { get; }
