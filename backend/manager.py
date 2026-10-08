@@ -604,6 +604,18 @@ class CancelledRequest(Exception):
     pass
 
 
+ENGINE_LOAD_MODEL_FIELDS = (
+    "path", "context", "cpu_threads", "gpu_layers", "auto_fit",
+    "fit_target_enabled", "fit_target_mib", "cache_type",
+    "mtp", "mtp_source", "mtp_draft_path", "mtp_draft_max",
+    "vision", "mmproj",
+)
+
+
+def engine_load_model_config(model: dict) -> dict:
+    """Return only model fields that affect the llama-server process itself."""
+    return {key: copy.deepcopy(model.get(key)) for key in ENGINE_LOAD_MODEL_FIELDS}
+
 @dataclass
 class Ticket:
     body: dict
@@ -822,15 +834,27 @@ class Manager:
             raise ValueError("找不到指定模型，請先加入模型庫。")
         return result
 
+    def load_settings_changed(self, model: dict) -> bool:
+        if not self.loaded_config or not isinstance(self.loaded_config.get("model"), dict):
+            return False
+        if self.loaded_config["engine_dir"] != self.config["engine_dir"] or self.loaded_config["engine_port"] != (self.engine_port_override or self.config["engine_port"]):
+            return True
+        loaded_model = self.loaded_config["model"]
+        if loaded_model.get("id") != model.get("id"):
+            return True
+        return engine_load_model_config(model) != engine_load_model_config(loaded_model)
+
     def begin_load(self, ident):
         model = copy.deepcopy(self.model_by_id(ident))
-        if self.tickets and (not self.model or self.model["id"] != ident):
-            raise ValueError("目前有執行中或排隊任務，請完成後再切換模型。")
+        same_ready_model = self.state == "ready" and self.model and self.model["id"] == ident
+        reload_needed = not same_ready_model or self.load_settings_changed(model)
+        if self.tickets and reload_needed:
+            raise ValueError("目前有執行中或排隊任務，請完成後再切換或重新載入模型。")
         if self.load_task and not self.load_task.done():
-            if self.model and self.model["id"] == ident:
+            if self.model and self.model["id"] == ident and not self.load_settings_changed(model):
                 return
             raise ValueError("模型正在載入，請稍候。")
-        if self.state == "ready" and self.model and self.model["id"] == ident:
+        if not reload_needed:
             return
         self.manual_loading = True
         self.load_task = asyncio.create_task(self.load(model))
@@ -909,7 +933,7 @@ class Manager:
 
     async def load(self, model):
         async with self.lifecycle:
-            if self.state == "ready" and self.model and self.model["id"] == model["id"]:
+            if self.state == "ready" and self.model and self.model["id"] == model["id"] and not self.load_settings_changed(model):
                 return
             await self._stop_engine()
             self.state = "loading"
@@ -1496,12 +1520,11 @@ class Manager:
             return True
         if not self.loaded_config:
             return False
-        live = self.loaded_config
-        if live["engine_dir"] != self.config["engine_dir"] or live["engine_port"] != (self.engine_port_override or self.config["engine_port"]):
+        live_model = self.loaded_config.get("model") or {}
+        current = next((m for m in self.config["models"] if m["id"] == live_model.get("id")), None)
+        if current is None:
             return True
-        current = next((m for m in self.config["models"] if m["id"] == live["model"]["id"]), {})
-        ignore = {"keep_loaded", "idle_minutes", "default_profile_id", "name", "temperature", "top_p", "top_k", "min_p", "reasoning_supported", "reasoning_capability", "reasoning_efforts", "reasoning_default_effort", "reasoning_budget_supported", "reasoning_toggle_keys", "reasoning_detection", "native_context", "mtp_capability", "mtp_layers"}
-        return {k:v for k,v in current.items() if k not in ignore} != {k:v for k,v in live["model"].items() if k not in ignore}
+        return self.load_settings_changed(current)
 
     def idle_limit(self):
         if not self.model:
