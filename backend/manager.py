@@ -378,10 +378,93 @@ def _gguf_read_scalar(handle, value_type: int):
     return struct.unpack("<" + spec[0], _gguf_read_exact(handle, spec[1]))[0]
 
 
+REASONING_EFFORT_ORDER = ("minimal", "low", "medium", "high", "xhigh", "max")
+
+
+def analyze_reasoning_template(template: str) -> dict:
+    """Infer reasoning controls from the model's own Jinja chat template.
+
+    This is capability-driven rather than model-family-driven: Qwen,
+    DeepSeek, GLM, Gemma and future open models are handled by the same
+    signals whenever their templates expose them.
+    """
+    result = {
+        "reasoning_capability": "unknown",
+        "reasoning_efforts": [],
+        "reasoning_default_effort": "",
+        "reasoning_budget_supported": False,
+        "reasoning_toggle_keys": [],
+    }
+    if not isinstance(template, str) or not template.strip():
+        return result
+
+    lower = template.lower()
+    toggle_keys = []
+    if re.search(r"\benable_thinking\b", template):
+        toggle_keys.append("enable_thinking")
+    if re.search(r"\badd_nothink_token\b", template):
+        toggle_keys.append("add_nothink_token")
+    # DeepSeek V3.x and some other templates use a plain "thinking" kwarg.
+    if re.search(r"(?i)(?:if|set|default|defined|not)\s+[^\n{}]{0,80}\bthinking\b|\bthinking\s+is\s+(?:not\s+)?defined", template):
+        toggle_keys.append("thinking")
+
+    has_reasoning_effort = bool(re.search(r"\breasoning_effort\b", template))
+    has_reasoning_markers = any(token in lower for token in (
+        "<think>", "</think>", "reasoning_content", "thinking_start_token", "thinking_end_token"
+    ))
+
+    # Some templates explicitly reject disabling thinking (for example some
+    # always-reasoning Qwen variants). Do not advertise a toggle in that case.
+    rejects_disable = bool(re.search(
+        r"(?i)(disabl(?:e|ing)\s+thinking\s+is\s+not\s+supported|enable_thinking[^\n]{0,120}false[^\n]{0,120}raise_exception)",
+        template,
+    ))
+    can_disable = bool(toggle_keys) and not rejects_disable
+
+    efforts = []
+    if has_reasoning_effort:
+        # Extract only llama.cpp's known effort vocabulary, but derive which
+        # members are accepted from the template itself. This covers templates
+        # using tuple/list validation as well as named effort branches.
+        for effort in REASONING_EFFORT_ORDER:
+            if re.search(rf"(?i)['\"]{re.escape(effort)}['\"]", template):
+                efforts.append(effort)
+
+    default_effort = ""
+    for pattern in (
+        r"(?i)reasoning_effort\s*\|\s*default\(\s*['\"](minimal|low|medium|high|xhigh|max)['\"]",
+        r"(?i)default\(\s*['\"](minimal|low|medium|high|xhigh|max)['\"]\s*\)[^\n]{0,80}reasoning_effort",
+    ):
+        match = re.search(pattern, template)
+        if match:
+            default_effort = match.group(1).lower()
+            break
+    if default_effort and default_effort not in efforts:
+        efforts.append(default_effort)
+    efforts.sort(key=lambda x: REASONING_EFFORT_ORDER.index(x))
+
+    if can_disable:
+        capability = "toggle"
+    elif has_reasoning_markers or has_reasoning_effort:
+        capability = "always"
+    else:
+        capability = "none"
+
+    result.update(
+        reasoning_capability=capability,
+        reasoning_efforts=efforts,
+        reasoning_default_effort=default_effort,
+        reasoning_budget_supported=has_reasoning_markers,
+        reasoning_toggle_keys=toggle_keys if can_disable else [],
+    )
+    return result
+
 def inspect_gguf_capabilities(path_value: str) -> dict:
     """Inspect only the GGUF header/tensor directory; model weights are never loaded."""
     path = Path(path_value)
-    result = {"mtp_capability": "unknown", "mtp_layers": 0, "gguf_architecture": "", "native_context": 0, "mtp_tensor_count": 0}
+    result = {"mtp_capability": "unknown", "mtp_layers": 0, "gguf_architecture": "", "native_context": 0, "mtp_tensor_count": 0,
+              "reasoning_capability": "unknown", "reasoning_efforts": [], "reasoning_default_effort": "",
+              "reasoning_budget_supported": False, "reasoning_toggle_keys": [], "reasoning_detection": "pending"}
     if not path.is_file():
         return result
     try:
@@ -399,6 +482,7 @@ def inspect_gguf_capabilities(path_value: str) -> dict:
             nextn_layers = 0
             native_context = 0
             architecture = ""
+            chat_template = ""
             for _ in range(kv_count):
                 key = _gguf_string(handle, 65535)
                 value_type = _gguf_u32(handle)
@@ -411,6 +495,10 @@ def inspect_gguf_capabilities(path_value: str) -> dict:
                     raw = int(_gguf_read_scalar(handle, value_type))
                     if 512 <= raw <= 2097152:
                         native_context = max(native_context, raw)
+                elif key.startswith("tokenizer.chat_template") and value_type == 8:
+                    candidate = _gguf_read_scalar(handle, value_type)
+                    if isinstance(candidate, str) and len(candidate) > len(chat_template):
+                        chat_template = candidate
                 else:
                     _gguf_skip_value(handle, value_type)
 
@@ -428,6 +516,10 @@ def inspect_gguf_capabilities(path_value: str) -> dict:
             result["native_context"] = native_context
             result["mtp_layers"] = nextn_layers
             result["mtp_tensor_count"] = nextn_tensors
+            reasoning = analyze_reasoning_template(chat_template)
+            result.update(reasoning)
+            if chat_template:
+                result["reasoning_detection"] = "gguf"
             if nextn_layers > 0 and nextn_tensors > 0:
                 result["mtp_capability"] = "available"
             elif nextn_layers > 0:
