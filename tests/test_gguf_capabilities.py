@@ -50,6 +50,13 @@ def write_fixture(path: Path, *, nextn_layers: int | None, nextn_tensor: bool, c
     path.write_bytes(payload)
 
 
+class FitOutputTests(unittest.TestCase):
+    def test_parses_positive_gpu_layer_count(self):
+        self.assertEqual(manager.parse_fit_gpu_layers("-c 65536 -ngl 28"), 28)
+
+    def test_parses_all_gpu_layers_sentinel(self):
+        self.assertEqual(manager.parse_fit_gpu_layers("-c 65536 -ngl -1"), -1)
+
 class GgufCapabilityTests(unittest.TestCase):
     def test_detects_native_mtp(self):
         with tempfile.TemporaryDirectory() as tmp:
