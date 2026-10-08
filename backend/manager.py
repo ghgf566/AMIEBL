@@ -1390,17 +1390,23 @@ class Manager:
             return body
 
         budget = None
-        if p.get("budget_mode", "auto") == "custom":
+        custom_budget = p.get("budget_mode", "auto") == "custom"
+        if custom_budget:
+            # A user-selected hard limit is an explicit policy choice, not a
+            # capability heuristic. llama-server accepts thinking_budget_tokens
+            # per request while AMIEBL starts it with --reasoning-budget -1.
+            # Forward it even when our generic chat-template detector could not
+            # prove budget support; the engine will apply it when it can parse
+            # a reasoning span.
             budget = min(int(p["thinking_budget"]), max_budget)
         elif not native_effort and model.get("reasoning_budget_supported", False):
-            # Models without native effort levels (for example many hybrid
-            # thinking templates) use a token budget as AMIEBL's fallback
-            # implementation of light/balanced/deep/extreme.
+            # Auto budget is only a fallback for models where AMIEBL positively
+            # detected a usable reasoning span and no native effort level.
             budget = auto_reasoning_budget(level, max_budget)
 
         if native_effort:
             body["reasoning_effort"] = native_effort
-        if budget is not None and model.get("reasoning_budget_supported", False):
+        if budget is not None and (custom_budget or model.get("reasoning_budget_supported", False)):
             body["thinking_budget_tokens"] = budget
 
         ticket.record.update(effort=native_effort, thinking_budget=budget)
