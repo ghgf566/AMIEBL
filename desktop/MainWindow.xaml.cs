@@ -416,7 +416,7 @@ public partial class MainWindow : Window
         contextPanel.Children.Add(context);
         double minContextLog = Math.Log(2048, 2);
         double maxContextLog = Math.Log(contextSliderMax, 2);
-        var contextSlider = new Slider { Minimum = minContextLog, Maximum = maxContextLog, Value = Math.Clamp(Math.Log(Math.Max(2048, currentContext), 2), minContextLog, maxContextLog), TickFrequency = 1, IsSnapToTickEnabled = false, TickPlacement = System.Windows.Controls.Primitives.TickPlacement.BottomRight, SmallChange = 0.125, LargeChange = 1, Margin = new Thickness(0, 0, 0, 5) };
+        var contextSlider = new Slider { Minimum = minContextLog, Maximum = maxContextLog, Value = Math.Clamp(Math.Log(Math.Max(2048, currentContext), 2), minContextLog, maxContextLog), TickFrequency = 1, IsSnapToTickEnabled = true, TickPlacement = System.Windows.Controls.Primitives.TickPlacement.BottomRight, SmallChange = 1, LargeChange = 1, Margin = new Thickness(0, 0, 0, 5) };
         contextPanel.Children.Add(contextSlider);
         var contextTicks = Text("", 11, true);
         var tickNames = new List<string>();
