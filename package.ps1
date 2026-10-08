@@ -32,7 +32,7 @@ function Copy-Tree([string]$Source, [string]$Destination, [string[]]$ExcludedDir
 
 if (Test-Path -LiteralPath $portable) {
     Assert-ChildPath $portable $output
-    Remove-Item -LiteralPath $portable -Recurse -Force
+    throw "輸出資料夾已存在：$portable。為保護既有 Portable 的設定、模型與資料，請改用新的 -OutputDirectory；打包器不會自動刪除舊資料。"
 }
 New-Item -ItemType Directory -Force -Path $portable,$installerOutput | Out-Null
 Set-Content -LiteralPath (Join-Path $portable 'portable.flag') -Value 'Local Model Manager portable data lives beside the executable.' -Encoding UTF8

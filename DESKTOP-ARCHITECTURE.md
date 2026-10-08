@@ -22,6 +22,7 @@ The API still accepts complete JSON PUTs without a server ETag. The draft confli
 ./build.ps1 -OutputDirectory C:\path\to\new-output -SelfContained
 ./build.ps1 -Frontend WPF -OutputDirectory C:\path\to\wpf-output
 dotnet run --project tests/DesktopCoreRegression -c Release
+dotnet run --project tests/DesktopPlatformRegression -c Release
 python -m unittest discover -s tests -p "test_*.py" -v
 ```
 
