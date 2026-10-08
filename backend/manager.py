@@ -1520,7 +1520,7 @@ class Manager:
                 body.setdefault(key, val)
         kwargs = body.get("chat_template_kwargs") or {}
         reasoning = body.get("reasoning") if isinstance(body.get("reasoning"), dict) else {}
-        explicit = any(k in body for k in ("reasoning_effort", "thinking_budget_tokens")) or "effort" in reasoning or any(k in kwargs for k in ("enable_thinking", "thinking", "add_nothink_token", "thinking_budget", "thinking_budget_tokens"))
+        explicit = any(k in body for k in ("reasoning_effort", "thinking_budget_tokens")) or "effort" in reasoning or any(k in kwargs for k in ("enable_thinking", "thinking", "thinking_mode", "add_nothink_token", "reasoning_effort", "reasoning_strength", "thinking_budget", "thinking_budget_tokens"))
         answer_reserve = min(256, max(1, cap // 4))
         max_budget = max(0, cap - answer_reserve)
         if explicit:
@@ -1588,13 +1588,13 @@ class Manager:
                 body["chat_template_kwargs"] = kwargs
 
         if not enabled:
-            # llama.cpp treats reasoning_effort=none as a universal request to
-            # disable reasoning, while template-specific kwargs above cover
-            # DeepSeek/GLM/Qwen variants that expose their own switch.
-            body["reasoning_effort"] = "none"
+            # Prefer the model template's detected toggle over a synthetic
+            # reasoning_effort="none". Cross-family templates use different
+            # control variables and the exact chat-template kwarg is the least
+            # surprising way to request non-thinking behavior.
             if model.get("reasoning_budget_supported", False):
                 body["thinking_budget_tokens"] = 0
-            ticket.record.update(effort="none", thinking_budget=0)
+            ticket.record.update(effort=None, thinking_budget=0)
             return body
 
         budget = None
