@@ -495,6 +495,7 @@ def inspect_gguf_capabilities(path_value: str) -> dict:
             native_context = 0
             architecture = ""
             chat_template = ""
+            named_chat_templates = []
             for _ in range(kv_count):
                 key = _gguf_string(handle, 65535)
                 value_type = _gguf_u32(handle)
@@ -507,10 +508,14 @@ def inspect_gguf_capabilities(path_value: str) -> dict:
                     raw = int(_gguf_read_scalar(handle, value_type))
                     if 512 <= raw <= 2097152:
                         native_context = max(native_context, raw)
-                elif key.startswith("tokenizer.chat_template") and value_type == 8:
+                elif key == "tokenizer.chat_template" and value_type == 8:
                     candidate = _gguf_read_scalar(handle, value_type)
-                    if isinstance(candidate, str) and len(candidate) > len(chat_template):
+                    if isinstance(candidate, str):
                         chat_template = candidate
+                elif key.startswith("tokenizer.chat_template.") and value_type == 8:
+                    candidate = _gguf_read_scalar(handle, value_type)
+                    if isinstance(candidate, str):
+                        named_chat_templates.append(candidate)
                 else:
                     _gguf_skip_value(handle, value_type)
 
@@ -528,6 +533,10 @@ def inspect_gguf_capabilities(path_value: str) -> dict:
             result["native_context"] = native_context
             result["mtp_layers"] = nextn_layers
             result["mtp_tensor_count"] = nextn_tensors
+            if not chat_template and named_chat_templates:
+                # Named templates are only a fallback. A named tool/reasoning
+                # template must never override the GGUF's explicit default.
+                chat_template = max(named_chat_templates, key=len)
             reasoning = analyze_reasoning_template(chat_template)
             result.update(reasoning)
             if chat_template:
