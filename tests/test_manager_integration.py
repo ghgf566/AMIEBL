@@ -90,6 +90,7 @@ class ManagerIntegration(unittest.TestCase):
         self.env.update({"LMM_ENGINE_COMMAND_JSON": json.dumps([sys.executable, str(FAKE)]),
                          "LMM_SKIP_FIT": "1", "LMM_FAKE_EVENTS": str(self.events_file), "PYTHONUNBUFFERED": "1",
                          "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1",
+                         "LMM_FAKE_PROPS_FILE": str(self.run_dir / "props.json"),
                          "LMM_FAKE_READY_DELAY_FILE": str(self.run_dir / "ready-delay")})
         self.log = (self.run_dir / "manager.log").open("w", encoding="utf-8")
         self.proc = subprocess.Popen([sys.executable, str(ROOT / "backend" / "manager.py"), "--data-dir", str(self.data),
@@ -342,6 +343,32 @@ class ManagerIntegration(unittest.TestCase):
         rec = eventually(lambda: next((x for x in self.records() if x["phase"] == "completed"), None))
         self.assertEqual(rec["reasoning_level"], "deep")
         self.assertEqual(rec["effort"], "xhigh")
+
+    def test_canonical_reasoning_budget_alias_respects_answer_reserve(self):
+        r = self.completion(max_tokens=100, reasoning_budget_tokens=999,
+                            thinking_budget_tokens=10)
+        self.assertEqual(r.status_code, 200, r.text)
+        forwarded = self.events("post")[-1]["body"]
+        self.assertEqual(forwarded["reasoning_budget_tokens"], 75)
+        self.assertEqual(forwarded["thinking_budget_tokens"], 75)
+
+    def test_first_request_uses_runtime_parser_capabilities(self):
+        self.load()
+        (self.run_dir / "props.json").write_text(json.dumps({
+            "chat_template": "{% if enable_thinking %}<think></think>{% endif %}",
+            "chat_template_caps": {"supports_reasoning_effort": False}}), encoding="utf-8")
+        self.api("POST", "/manager/unload", json={})
+        eventually(lambda: self.get("/manager/status")["state"] == "unloaded")
+        config = self.get("/manager/config")
+        config["models"][0].update(reasoning_capability="none", reasoning_detection="runtime")
+        config["profiles"][0].update(thinking_mode="on", budget_mode="custom", thinking_budget=77)
+        self.api("PUT", "/manager/config", json=config).raise_for_status()
+        r = self.completion()
+        self.assertEqual(r.status_code, 200, r.text)
+        forwarded = self.events("post")[-1]["body"]
+        self.assertEqual(forwarded["thinking_budget_tokens"], 77)
+        self.assertTrue(forwarded["chat_template_kwargs"]["enable_thinking"])
+        self.assertNotIn("reasoning_effort", forwarded)
 
     def test_custom_budget_is_forwarded_with_native_effort(self):
         config = self.get("/manager/config")

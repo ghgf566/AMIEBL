@@ -598,7 +598,7 @@ public partial class MainWindow : Window
         reasoningInfo.Children.Add(Text(detectedEfforts.Length > 0 ? "原生 Effort：" + string.Join(" / ", detectedEfforts) : "原生 Effort：無", 11, true));
         string defaultEffort = J.S(model, "reasoning_default_effort");
         if (!string.IsNullOrWhiteSpace(defaultEffort)) reasoningInfo.Children.Add(Text("模型預設 Effort：" + defaultEffort, 11, true));
-        reasoningInfo.Children.Add(Text(J.B(model, "reasoning_budget_supported") ? "✓ 已偵測到 reasoning span，可使用自動 Token Budget fallback" : "— 未確認自動 Budget 能力；Profile 的「自訂硬上限」仍會 best-effort 傳給 llama.cpp", 11, true));
+        reasoningInfo.Children.Add(Text(J.B(model, "reasoning_budget_supported") ? "✓ 模板含思考標記，可嘗試自動 Budget；是否生效仍取決於引擎 parser" : "— 未確認自動 Budget 能力；Profile 的自訂上限仍會傳給 llama.cpp；尚未驗證引擎能否套用", 11, true));
         string toggleKeys = string.Join(", ", J.A(model, "reasoning_toggle_keys").Select(x => x?.ToString()).Where(x => !string.IsNullOrWhiteSpace(x)));
         if (!string.IsNullOrWhiteSpace(toggleKeys)) reasoningInfo.Children.Add(Text("Template 控制：" + toggleKeys, 11, true));
         string reasoningSource = J.S(model, "reasoning_detection", "pending");

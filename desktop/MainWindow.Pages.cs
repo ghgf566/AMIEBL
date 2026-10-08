@@ -76,10 +76,11 @@ public partial class MainWindow
         var level = Choice(panel, "AMIEBL 思考強度", J.S(profile, "reasoning_level", "balanced"),
             ("light", "輕量 · 優先速度"), ("balanced", "均衡"), ("deep", "深入"), ("extreme", "極深 · 優先推理"));
         var budgetMode = Choice(panel, "思考 Token 預算", J.S(profile, "budget_mode", "custom"),
-            ("auto", "自動 · 依模型能力與思考強度"), ("custom", "自訂硬上限"));
+            ("auto", "自動 · 依模型能力與思考強度"), ("custom", "自訂上限 · 需引擎支援"));
         var budgetPanel = new StackPanel { Margin = new Thickness(16, 0, 0, 0) };
         var budget = Field(budgetPanel, "自訂思考預算上限（tokens）", J.S(profile, "thinking_budget", "1536"));
         panel.Children.Add(budgetPanel);
+        budgetPanel.Children.Add(Text("此值會與原生 effort 同時傳送；只有 llama.cpp parser 能辨識思考結束標記時才會限制思考。客戶端明確指定 reasoning 設定時優先，較小的整次生成上限也會縮減此預算。", 11, true));
         var max = Field(panel, "整次生成上限（包含思考與回答）", J.S(profile, "max_tokens", "8192"));
         var summary = Text("", 12, true);
         panel.Children.Add(summary);

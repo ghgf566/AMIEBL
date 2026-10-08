@@ -84,7 +84,8 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path == "/__control":
             self.json_response(CONTROL)
         elif self.path.startswith("/props"):
-            self.json_response({"total_slots": 1, "build_info": "fake-test-only", "default_generation_settings": {"n_ctx": 4096}})
+            props_file = os.environ.get("LMM_FAKE_PROPS_FILE")
+            self.json_response(json.loads(Path(props_file).read_text(encoding="utf-8")) if props_file and Path(props_file).exists() else CONTROL.get("props", {"total_slots": 1, "build_info": "fake-test-only", "default_generation_settings": {"n_ctx": 4096}}))
         else:
             self.json_response({"error": "fake route unavailable"}, 404)
 

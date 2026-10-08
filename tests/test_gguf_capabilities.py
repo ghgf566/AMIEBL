@@ -225,6 +225,15 @@ class ReasoningTemplateTests(unittest.TestCase):
         self.assertEqual(result["reasoning_efforts"], [])
         self.assertIn("thinking", result["reasoning_toggle_keys"])
 
+    def test_reasoning_instruction_prose_is_not_a_thinking_kwarg(self):
+        template = """
+        {% set resolved_reasoning_effort = reasoning_effort|default('xhigh') %}
+        {% set reasoning_instructions = 'Keep your thinking brief and focused.' %}
+        {% if enable_thinking %}{{ '<think>' }}{% endif %}
+        """
+        result = manager.analyze_reasoning_template(template)
+        self.assertEqual(result["reasoning_toggle_keys"], ["enable_thinking"])
+
     def test_glm_enable_thinking_toggle(self):
         template = """
         <|assistant|>{{ '\\n<think></think>' if (enable_thinking is defined and not enable_thinking) else '' }}

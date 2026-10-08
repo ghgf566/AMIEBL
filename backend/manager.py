@@ -451,7 +451,11 @@ def analyze_reasoning_template(template: str) -> dict:
     if re.search(r"\bthinking_mode\b", template) and re.search(r"(?i)['\"](?:enabled|disabled|adaptive)['\"]", template):
         toggle_keys.append("thinking_mode")
     # DeepSeek V3.x and some other templates use a plain "thinking" kwarg.
-    if re.search(r"(?i)(?:if|set|default|defined|not)\s+[^\n{}]{0,80}\bthinking\b|\bthinking\s+is\s+(?:not\s+)?defined", template):
+    # Inspect Jinja expressions, excluding string literals: prose such as
+    # "Keep your thinking brief" is not a template input (Qwen3.8).
+    expressions = "\n".join(re.findall(r"\{[%{]-?(.*?)-?[%}]\}", template, re.S))
+    expressions = re.sub(r"(['\"])(?:\\.|(?!\1).)*?\1", "", expressions)
+    if re.search(r"(?i)(?:if|set|default|defined|not)\s+[^\n{}]{0,80}\bthinking\b|\bthinking\s+is\s+(?:not\s+)?defined", expressions):
         toggle_keys.append("thinking")
 
     has_reasoning_effort = bool(re.search(r"\b(?:reasoning_effort|reasoning_strength)\b", template))
@@ -1522,17 +1526,19 @@ class Manager:
                 body[key] = val
         kwargs = body.get("chat_template_kwargs") or {}
         reasoning = body.get("reasoning") if isinstance(body.get("reasoning"), dict) else {}
-        explicit = any(k in body for k in ("reasoning_effort", "thinking_budget_tokens")) or "effort" in reasoning or any(k in kwargs for k in ("enable_thinking", "thinking", "thinking_mode", "add_nothink_token", "reasoning_effort", "reasoning_strength", "thinking_budget", "thinking_budget_tokens"))
+        explicit = any(k in body for k in ("reasoning_effort", "thinking_budget_tokens", "reasoning_budget_tokens")) or "effort" in reasoning or any(k in kwargs for k in ("enable_thinking", "thinking", "thinking_mode", "add_nothink_token", "reasoning_effort", "reasoning_strength", "thinking_budget", "thinking_budget_tokens"))
         answer_reserve = min(256, max(1, cap // 4))
         max_budget = max(0, cap - answer_reserve)
         if explicit:
             ticket.record["decision"] = "採用客戶端指定的思考設定"
             effort = body.get("reasoning_effort", reasoning.get("effort"))
-            budget = body.get("thinking_budget_tokens", kwargs.get("thinking_budget_tokens", kwargs.get("thinking_budget")))
+            budget = body.get("reasoning_budget_tokens", body.get("thinking_budget_tokens", kwargs.get("thinking_budget_tokens", kwargs.get("thinking_budget"))))
             if budget is not None:
                 number(budget, "思考預算", -1, 1048576, True)
                 budget = max_budget if budget == -1 else min(int(budget), max_budget)
                 body["thinking_budget_tokens"] = budget
+                if "reasoning_budget_tokens" in body:
+                    body["reasoning_budget_tokens"] = budget
                 for key in ("thinking_budget", "thinking_budget_tokens"):
                     if key in kwargs:
                         kwargs[key] = budget
@@ -1624,6 +1630,14 @@ class Manager:
 
     async def process_ticket(self, ticket):
         await self.ensure_ready(ticket)
+        # Tickets snapshot user settings at submission, but runtime detection
+        # happens during demand load. Use those parser capabilities immediately
+        # for the first request, without replacing its saved policy snapshot.
+        if self.model and self.model["id"] == ticket.model["id"]:
+            for key in ("reasoning_capability", "reasoning_efforts", "reasoning_default_effort",
+                        "reasoning_budget_supported", "reasoning_toggle_keys", "reasoning_detection"):
+                if key in self.model:
+                    ticket.model[key] = copy.deepcopy(self.model[key])
         body = await self.policy(ticket)
         if ticket.cancel.is_set():
             raise CancelledRequest()
