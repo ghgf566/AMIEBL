@@ -585,6 +585,37 @@ def inspect_gguf_capabilities(path_value: str, _include_split_shards: bool = Tru
                 result["mtp_capability"] = "unavailable"
     return result
 
+def apply_detected_model_capabilities(model: dict, detected: dict, *, reset_reasoning: bool = False) -> None:
+    """Merge GGUF-derived capability metadata into one model config.
+
+    Detection is authoritative for context/MTP. Reasoning metadata is replaced
+    when the model path changed, or refreshed when a readable default chat
+    template was found. Keeping this logic in one place prevents startup and
+    save-time capability handling from drifting apart.
+    """
+    model["mtp_capability"] = detected.get("mtp_capability", "unknown")
+    model["mtp_layers"] = int(detected.get("mtp_layers", 0) or 0)
+    native_context = int(detected.get("native_context", 0) or 0)
+    model["native_context"] = native_context
+    if native_context > 0 and int(model.get("context", 0) or 0) > native_context:
+        # AMIEBL treats the GGUF-declared context length as the supported
+        # maximum everywhere else, so normalize an older/default value here
+        # instead of persisting a config that validate_config will later reject.
+        model["context"] = native_context
+
+    if reset_reasoning or detected.get("reasoning_detection") == "gguf":
+        model["reasoning_capability"] = detected.get("reasoning_capability", "unknown")
+        model["reasoning_efforts"] = copy.deepcopy(detected.get("reasoning_efforts", []))
+        model["reasoning_default_effort"] = str(detected.get("reasoning_default_effort", "") or "")
+        model["reasoning_budget_supported"] = bool(detected.get("reasoning_budget_supported", False))
+        model["reasoning_toggle_keys"] = copy.deepcopy(detected.get("reasoning_toggle_keys", []))
+        model["reasoning_detection"] = detected.get("reasoning_detection", "pending")
+        model["reasoning_supported"] = model["reasoning_capability"] in ("toggle", "always")
+
+    if model["mtp_capability"] != "available" and model.get("mtp_source", "native") == "native":
+        model["mtp"] = False
+        model["mtp_draft_max"] = None
+
 def parse_fit_gpu_layers(output_text: str) -> int | None:
     match = re.search(r"(?:^|\s)-ngl\s+(-?\d+)", output_text)
     return int(match.group(1)) if match else None
@@ -722,25 +753,7 @@ class Manager:
         for model in self.config["models"]:
             if (model.get("mtp_capability", "unknown") == "unknown" or model.get("native_context", 0) <= 0 or model.get("reasoning_detection") not in ("gguf", "runtime")) and Path(model["path"]).is_file():
                 detected = inspect_gguf_capabilities(model["path"])
-                model["mtp_capability"] = detected["mtp_capability"]
-                model["mtp_layers"] = detected["mtp_layers"]
-                model["native_context"] = detected["native_context"]
-                    if old is None and detected["native_context"] > 0 and model.get("context", 0) > detected["native_context"]:
-                        # New registrations start with a generic 32K context.
-                        # Older GGUFs can legitimately advertise a smaller
-                        # native window, so clamp only this initial default.
-                        model["context"] = detected["native_context"]
-                if detected.get("reasoning_detection") == "gguf":
-                    model["reasoning_capability"] = detected["reasoning_capability"]
-                    model["reasoning_efforts"] = detected["reasoning_efforts"]
-                    model["reasoning_default_effort"] = detected["reasoning_default_effort"]
-                    model["reasoning_budget_supported"] = detected["reasoning_budget_supported"]
-                    model["reasoning_toggle_keys"] = detected["reasoning_toggle_keys"]
-                    model["reasoning_detection"] = "gguf"
-                    model["reasoning_supported"] = detected["reasoning_capability"] in ("toggle", "always")
-                if detected["mtp_capability"] != "available" and model.get("mtp") and model.get("mtp_source", "native") == "native":
-                    model["mtp"] = False
-                    model["mtp_draft_max"] = None
+                apply_detected_model_capabilities(model, detected)
                 capability_changed = True
         if capability_changed:
             atomic_json(self.config_path, self.config)
@@ -810,23 +823,7 @@ class Manager:
                 path_changed = old is None or old.get("path") != model.get("path")
                 if path_changed or model.get("mtp_capability", "unknown") == "unknown" or model.get("native_context", 0) <= 0 or model.get("reasoning_detection") not in ("gguf", "runtime"):
                     detected = inspect_gguf_capabilities(model["path"])
-                    model["mtp_capability"] = detected["mtp_capability"]
-                    model["mtp_layers"] = detected["mtp_layers"]
-                    model["native_context"] = detected["native_context"]
-                    if path_changed or detected.get("reasoning_detection") == "gguf":
-                        # A different GGUF must never inherit reasoning metadata
-                        # from the previous file. If the new template cannot be
-                        # inspected, store "unknown" instead of stale capabilities.
-                        model["reasoning_capability"] = detected["reasoning_capability"]
-                        model["reasoning_efforts"] = detected["reasoning_efforts"]
-                        model["reasoning_default_effort"] = detected["reasoning_default_effort"]
-                        model["reasoning_budget_supported"] = detected["reasoning_budget_supported"]
-                        model["reasoning_toggle_keys"] = detected["reasoning_toggle_keys"]
-                        model["reasoning_detection"] = detected.get("reasoning_detection", "pending")
-                        model["reasoning_supported"] = detected["reasoning_capability"] in ("toggle", "always")
-                    if detected["mtp_capability"] != "available" and model.get("mtp_source", "native") == "native":
-                        model["mtp"] = False
-                        model["mtp_draft_max"] = None
+                    apply_detected_model_capabilities(model, detected, reset_reasoning=path_changed)
         c = validate_config(incoming)
         backup = self.data / "backups"
         backup.mkdir(exist_ok=True)
