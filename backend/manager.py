@@ -305,7 +305,7 @@ def validate_config(value: Any) -> dict:
             key not in ("enable_thinking", "thinking", "add_nothink_token") for key in m["reasoning_toggle_keys"]
         ):
             raise ValueError("無效的 reasoning toggle key。")
-        if m.get("reasoning_detection") not in ("pending", "legacy", "gguf"):
+        if m.get("reasoning_detection") not in ("pending", "legacy", "gguf", "runtime"):
             raise ValueError("無效的 reasoning 能力來源。")
     return c
 
@@ -628,7 +628,7 @@ class Manager:
             atomic_json(self.config_path, self.config)
         capability_changed = False
         for model in self.config["models"]:
-            if (model.get("mtp_capability", "unknown") == "unknown" or model.get("native_context", 0) <= 0 or model.get("reasoning_detection") != "gguf") and Path(model["path"]).is_file():
+            if (model.get("mtp_capability", "unknown") == "unknown" or model.get("native_context", 0) <= 0 or model.get("reasoning_detection") not in ("gguf", "runtime")) and Path(model["path"]).is_file():
                 detected = inspect_gguf_capabilities(model["path"])
                 model["mtp_capability"] = detected["mtp_capability"]
                 model["mtp_layers"] = detected["mtp_layers"]
@@ -711,7 +711,7 @@ class Manager:
                     continue
                 old = previous.get(model.get("id"))
                 path_changed = old is None or old.get("path") != model.get("path")
-                if path_changed or model.get("mtp_capability", "unknown") == "unknown" or model.get("native_context", 0) <= 0 or model.get("reasoning_detection") != "gguf":
+                if path_changed or model.get("mtp_capability", "unknown") == "unknown" or model.get("native_context", 0) <= 0 or model.get("reasoning_detection") not in ("gguf", "runtime"):
                     detected = inspect_gguf_capabilities(model["path"])
                     model["mtp_capability"] = detected["mtp_capability"]
                     model["mtp_layers"] = detected["mtp_layers"]
@@ -739,6 +739,34 @@ class Manager:
             p.unlink(missing_ok=True)
         self.log("設定已儲存。需要重新載入的參數會在下次載入時套用。")
         return self.config
+
+    def refine_reasoning_from_props(self, model_id: str, props: dict) -> None:
+        """Refine pre-load GGUF heuristics using llama.cpp's own Jinja parser."""
+        if not isinstance(props, dict):
+            return
+        template = props.get("chat_template")
+        caps = props.get("chat_template_caps") if isinstance(props.get("chat_template_caps"), dict) else {}
+        if not isinstance(template, str) or not template.strip():
+            return
+        detected = analyze_reasoning_template(template)
+        if detected["reasoning_capability"] == "unknown":
+            return
+        if caps.get("supports_reasoning_effort") is False:
+            detected["reasoning_efforts"] = []
+            detected["reasoning_default_effort"] = ""
+        model = next((m for m in self.config["models"] if m["id"] == model_id), None)
+        if model is None:
+            return
+        for key in ("reasoning_capability", "reasoning_efforts", "reasoning_default_effort",
+                    "reasoning_budget_supported", "reasoning_toggle_keys"):
+            model[key] = copy.deepcopy(detected[key])
+        model["reasoning_detection"] = "runtime"
+        model["reasoning_supported"] = detected["reasoning_capability"] in ("toggle", "always")
+        if self.model and self.model.get("id") == model_id:
+            for key in ("reasoning_capability", "reasoning_efforts", "reasoning_default_effort",
+                        "reasoning_budget_supported", "reasoning_toggle_keys", "reasoning_detection", "reasoning_supported"):
+                self.model[key] = copy.deepcopy(model[key])
+        atomic_json(self.config_path, self.config)
 
     def engine_command(self):
         override = os.environ.get("LMM_ENGINE_COMMAND_JSON")
@@ -940,7 +968,8 @@ class Manager:
                 try:
                     props = (await self.http.get(self.engine_base + "/props", timeout=1)).json()
                     self.engine_version = self.clean(props.get("build_info", "")) or None
-                except (httpx.HTTPError, ValueError):
+                    self.refine_reasoning_from_props(model["id"], props)
+                except (httpx.HTTPError, ValueError, TypeError):
                     self.engine_version = None
                 self.log(f"模型已載入：{model['name']}（GPU 層數 {layers}）。")
             except BaseException as exc:
