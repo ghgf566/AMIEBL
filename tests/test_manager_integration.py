@@ -715,6 +715,28 @@ class ManagerIntegration(unittest.TestCase):
         self.assertEqual(self.get("/manager/status")["state"], "unloaded")
         self.assertEqual(len(self.events("start")), 1)
 
+    def test_pending_status_distinguishes_manager_restart_from_model_reload(self):
+        self.load()
+        config = self.get("/manager/config")
+        config["api_port"] = free_port()
+        response = self.api("PUT", "/manager/config", json=config)
+        self.assertEqual(response.status_code, 200, response.text)
+        status = self.get("/manager/status")
+        self.assertTrue(status["pending_config"])
+        self.assertTrue(status["pending_restart"])
+        self.assertFalse(status["pending_model_reload"])
+
+        config = self.get("/manager/config")
+        config["api_port"] = self.port
+        model = next(x for x in config["models"] if x["id"] == "test-model")
+        model["context"] = 4096
+        response = self.api("PUT", "/manager/config", json=config)
+        self.assertEqual(response.status_code, 200, response.text)
+        status = self.get("/manager/status")
+        self.assertTrue(status["pending_config"])
+        self.assertFalse(status["pending_restart"])
+        self.assertTrue(status["pending_model_reload"])
+
     def test_model_load_settings_wait_for_explicit_reload_and_same_model_load_applies_them(self):
         self.load()
         config = self.get("/manager/config")
