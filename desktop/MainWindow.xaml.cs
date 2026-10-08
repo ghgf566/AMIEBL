@@ -416,7 +416,7 @@ public partial class MainWindow : Window
         contextPanel.Children.Add(context);
         double minContextLog = Math.Log(2048, 2);
         double maxContextLog = Math.Log(contextSliderMax, 2);
-        var contextSlider = new Slider { Minimum = minContextLog, Maximum = maxContextLog, Value = Math.Clamp(Math.Log(Math.Max(2048, currentContext), 2), minContextLog, maxContextLog), TickFrequency = 1, IsSnapToTickEnabled = false, SmallChange = 0.125, LargeChange = 1, Margin = new Thickness(0, 0, 0, 5) };
+        var contextSlider = new Slider { Minimum = minContextLog, Maximum = maxContextLog, Value = Math.Clamp(Math.Log(Math.Max(2048, currentContext), 2), minContextLog, maxContextLog), TickFrequency = 1, IsSnapToTickEnabled = false, TickPlacement = System.Windows.Controls.Primitives.TickPlacement.BottomRight, SmallChange = 0.125, LargeChange = 1, Margin = new Thickness(0, 0, 0, 5) };
         contextPanel.Children.Add(contextSlider);
         var contextTicks = Text("", 11, true);
         var tickNames = new List<string>();
@@ -478,7 +478,7 @@ public partial class MainWindow : Window
         int savedThreads = Math.Clamp(J.I(model, "cpu_threads", 0), 0, logicalThreads);
         var cpuPanel = Section("CPU 執行緒上限", "0 代表 Auto；指定數值時，生成與批次／上下文處理都會套用相同的執行緒上限。");
         var cpuValue = Text("", 12, true);
-        var cpuSlider = new Slider { Minimum = 0, Maximum = logicalThreads, Value = savedThreads, TickFrequency = 1, IsSnapToTickEnabled = true, SmallChange = 1, LargeChange = Math.Max(1, logicalThreads / 4), Margin = new Thickness(0, 0, 0, 4) };
+        var cpuSlider = new Slider { Minimum = 0, Maximum = logicalThreads, Value = savedThreads, TickFrequency = 1, IsSnapToTickEnabled = true, TickPlacement = System.Windows.Controls.Primitives.TickPlacement.BottomRight, SmallChange = 1, LargeChange = Math.Max(1, logicalThreads / 4), Margin = new Thickness(0, 0, 0, 4) };
         void RefreshCpuLabel() => cpuValue.Text = cpuSlider.Value < 0.5 ? $"Auto（llama.cpp 自動決定，系統可用 {logicalThreads} 個邏輯執行緒）" : $"最多 {(int)Math.Round(cpuSlider.Value)} 個 CPU 執行緒";
         cpuSlider.ValueChanged += (_, _) => { RefreshCpuLabel(); dirty = true; };
         RefreshCpuLabel();
@@ -507,6 +507,7 @@ public partial class MainWindow : Window
         var externalMtpSettings = new StackPanel { Margin = new Thickness(12, 6, 0, 0) };
         var mtpDraftPath = Field(externalMtpSettings, "外部 MTP Draft GGUF 路徑", J.S(model, "mtp_draft_path"));
         externalMtpSettings.Children.Add(Button("選擇 MTP Draft", () => { PickFile(mtpDraftPath, "GGUF 模型|*.gguf"); return Task.CompletedTask; }));
+        externalMtpSettings.Children.Add(Text("外部 Draft 會額外占用 RAM / VRAM；目前 llama-fit-params 的獨立預估不會把這顆 Draft 一起算入，顯存吃緊時請提高「自訂預留顯示記憶體」。", 11, true));
         mtpSettings.Children.Add(externalMtpSettings);
         var mtpDraftMax = FieldWithHint(mtpSettings, "MTP 最大猜測 Token 數（spec-draft-n-max）", J.S(model, "mtp_draft_max", ""), "每次投機預測最多嘗試猜測的 token 數量。\n\n• 典型設置：2 或 3。\n• 範圍：1 ~ 16。\n• 保留空白或 auto：使用 AMIEBL 預設值（2）。", "auto（預設 2）");
         panel.Children.Add(mtpSettings);
