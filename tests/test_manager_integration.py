@@ -871,6 +871,43 @@ class ManagerIntegration(unittest.TestCase):
         self.assertEqual(r.status_code, 200, r.text)
         forwarded = self.events("post")[-1]["body"]
         self.assertEqual([forwarded[key] for key in ("temperature", "top_p", "top_k", "min_p")], [0, 0, 0, 0])
+    def test_model_library_vision_mtp_settings_reach_server_argv(self):
+        mmproj = self.run_dir / "mmproj-test.gguf"
+        draft = self.run_dir / "draft-test.gguf"
+        mmproj.write_bytes(b"GGUF")
+        draft.write_bytes(b"GGUF")
+        config = self.get("/manager/config")
+        model = next(m for m in config["models"] if m["id"] == "test-model")
+        model.update(vision=True, mmproj=str(mmproj), mtp=True, mtp_source="external",
+                     mtp_draft_path=str(draft), mtp_draft_max=4, cache_type="q8_0")
+        response = self.api("PUT", "/manager/config", json=config)
+        self.assertEqual(response.status_code, 200, response.text)
+        saved = self.get("/manager/config")["models"][0]
+        self.assertTrue(saved["vision"])
+        self.assertTrue(saved["mtp"])
+        self.assertEqual(saved["mtp_source"], "external")
+        self.load()
+        argv = self.events("start")[-1]["argv"]
+        for flag, expected in (("--mmproj", str(mmproj)), ("--spec-draft-model", str(draft)),
+                               ("--spec-draft-n-max", "4"), ("-ctk", "q8_0"), ("-ctv", "q8_0")):
+            self.assertIn(flag, argv)
+            self.assertEqual(argv[argv.index(flag) + 1], expected)
+
+    def test_model_library_disabled_options_are_saved_but_do_not_restart_engine(self):
+        self.load()
+        config = self.get("/manager/config")
+        model = next(m for m in config["models"] if m["id"] == "test-model")
+        model.update(vision=False, mmproj="unused-projector.gguf", mtp=False,
+                     mtp_source="external", mtp_draft_path="unused-draft.gguf",
+                     mtp_draft_max=5, auto_fit=False, fit_target_enabled=True,
+                     fit_target_mib=8192)
+        response = self.api("PUT", "/manager/config", json=config)
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertFalse(self.get("/manager/status")["pending_model_reload"])
+        self.assertEqual(len(self.events("start")), 1)
+        r = self.completion("inactive model settings")
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(len(self.events("start")), 1)
     def test_default_profile_change_applies_without_engine_reload(self):
         self.load()
         config = self.get("/manager/config")
