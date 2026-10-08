@@ -1,4 +1,4 @@
-#define MyAppName "Local Model Manager"
+#define MyAppName "AMIEBL"
 #define MyAppVersion "1.0.0"
 #ifndef SourceDir
   #define SourceDir "..\..\outputs\LocalModelManager-release\portable"
@@ -11,12 +11,13 @@
 AppId={{E2C7192B-0D96-4D5E-AF2E-90E6C0C21C9D}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
-AppPublisher=Local Model Manager
+AppPublisher=Mr. Chen
+AppPublisherURL=https://github.com/ghgf566/AMIEBL
 DefaultDirName={localappdata}\Programs\LocalModelManager
 DefaultGroupName={#MyAppName}
 OutputDir={#OutputDir}
-OutputBaseFilename=LocalModelManager-Setup
-Compression=lzma2/max
+OutputBaseFilename=AMIEBL-v1.0.0-win-x64-setup
+Compression=lzma2/fast
 SolidCompression=yes
 PrivilegesRequired=lowest
 ArchitecturesInstallIn64BitMode=x64
@@ -29,7 +30,8 @@ UninstallDisplayIcon={app}\manager.ico
 
 [Files]
 ; The installed build must never copy portable mode or mutable data / GGUF models.
-Source: "{#SourceDir}\*"; DestDir: "{app}"; Excludes: "\portable.flag,\installed.flag,\data\*,\models\*"; Flags: ignoreversion recursesubdirs createallsubdirs
+; Do not use createallsubdirs: it recreates excluded empty models/data folders.
+Source: "{#SourceDir}\*"; DestDir: "{app}"; Excludes: "\portable.flag,\installed.flag,\data\*,\models\*"; Flags: ignoreversion recursesubdirs
 
 [Icons]
 Name: "{group}\Local Model Manager"; Filename: "{app}\LocalModelManager.exe"; WorkingDir: "{app}"; IconFilename: "{app}\manager.ico"

@@ -80,34 +80,29 @@ def atomic_text(path: Path, text: str) -> None:
 
 
 def default_config() -> dict:
-    legacy_model_path = Path(r"D:\model\unsloth\Qwen3.8-27B-GGUF\Qwen3.8-27B-UD-IQ4_XS.gguf")
-    legacy_projector = Path(r"D:\model\unsloth\Qwen3.8-27B-GGUF\mmproj-F16.gguf")
-    model_root = Path(os.environ.get("LMM_MODEL_DIR", r"D:\model")).expanduser()
+    # Fresh installs must not scan a developer's drive or invent a personal model.
+    model_root = Path(os.environ.get("LMM_MODEL_DIR", str(Path.home() / "Models"))).expanduser()
     model_candidates = sorted(
         (p for p in model_root.rglob("*.gguf") if "mmproj" not in p.name.lower() and "draft" not in p.name.lower()),
         key=lambda p: str(p).lower(),
     ) if model_root.is_dir() else []
     model_env = os.environ.get("LMM_DEFAULT_MODEL_PATH", "").strip()
-    has_packaged_model_root = bool(os.environ.get("LMM_MODEL_DIR", "").strip())
-    model_path = Path(model_env) if model_env else (legacy_model_path if legacy_model_path.is_file() else (model_candidates[0] if model_candidates else (model_root / "model.gguf" if has_packaged_model_root else legacy_model_path)))
+    model_path = Path(model_env).expanduser() if model_env else (model_candidates[0] if model_candidates else None)
     projector_env = os.environ.get("LMM_DEFAULT_PROJECTOR", "").strip()
-    projector = Path(projector_env) if projector_env else (legacy_projector if not has_packaged_model_root else Path(""))
-    if not projector.is_file() and model_candidates:
-        same_dir = model_candidates[0].parent / "mmproj-F16.gguf"
-        projector = same_dir if same_dir.is_file() else Path("")
-    projector_value = "" if projector == Path("") else str(projector)
+    projector = Path(projector_env).expanduser() if projector_env else None
+    projector_value = str(projector) if projector and projector.is_file() else ""
     return {"schema_version": 1, "model_dirs": [str(model_root)],
             "engine_dir": os.environ.get("LMM_ENGINE_DIR", str(Path.home() / "llama.cpp")), "api_port": 8080, "engine_port": 8081,
-            "default_model_id": "qwen3.8-27b-local", "default_profile_id": "coding",
+            "default_model_id": "local-model" if model_path else "", "default_profile_id": "coding",
             "idle_minutes": 15, "auto_start": False, "start_hidden": False,
             "close_to_tray": True, "preload": False, "log_request_bodies": False,
             "log_retention_days": 7, "vscode_abort_watch": True,
-            "models": [{"id": "qwen3.8-27b-local", "name": "Qwen3.8 27B", "path": str(model_path),
-                        "mmproj": projector_value, "vision": bool(projector_value and Path(projector_value).is_file()), "context": 65536, "gpu_layers": 17,
-                        "auto_fit": True, "fit_target_enabled": False, "fit_target_mib": 2048, "cache_type": "q4_0", "cpu_threads": 0, "native_context": 0, "mtp": True, "mtp_source": "native", "mtp_draft_path": "", "mtp_draft_max": None, "mtp_capability": "unknown", "mtp_layers": 0,
+            "models": [{"id": "local-model", "name": model_path.stem if model_path else "Local model", "path": str(model_path),
+                        "mmproj": projector_value, "vision": bool(projector_value and Path(projector_value).is_file()), "context": 8192, "gpu_layers": 0,
+                        "auto_fit": True, "fit_target_enabled": False, "fit_target_mib": 2048, "cache_type": "f16", "cpu_threads": 0, "native_context": 0, "mtp": False, "mtp_source": "native", "mtp_draft_path": "", "mtp_draft_max": None, "mtp_capability": "unknown", "mtp_layers": 0,
                         "keep_loaded": False, "idle_minutes": None, "default_profile_id": "coding",
                         "temperature": None, "top_p": None, "top_k": None, "min_p": None,
-                        "reasoning_supported": False, "reasoning_capability": "unknown", "reasoning_efforts": [], "reasoning_default_effort": "", "reasoning_budget_supported": False, "reasoning_toggle_keys": [], "reasoning_detection": "pending"}],
+                        "reasoning_supported": False, "reasoning_capability": "unknown", "reasoning_efforts": [], "reasoning_default_effort": "", "reasoning_budget_supported": False, "reasoning_toggle_keys": [], "reasoning_detection": "pending"}] if model_path else [],
             "profiles": [{"id": ident, "name": name, "thinking_mode": "auto", "reasoning_level": level,
                           "budget_mode": "auto", "thinking_budget": budget, "max_tokens": cap}
                          for ident, name, level, budget, cap in
@@ -1945,14 +1940,14 @@ class Manager:
                                                 )
                                             except ValueError:
                                                 pass
-            
+
                                         accept = True
 
                                         if event_time is not None:
                                             try:
                                                 started_utc = dt.datetime.fromisoformat(
                                                     ticket.record["started_at"]
-                                                )           
+                                                )
 
                                                 started_local = (
                                                     started_utc
