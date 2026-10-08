@@ -502,7 +502,6 @@ public partial class MainWindow : Window
         mtpSource.Items.Add(nativeMtpItem); mtpSource.Items.Add(externalMtpItem);
         string savedMtpSource = J.S(model, "mtp_source", "native");
         mtpSource.SelectedItem = savedMtpSource == "native" && nativeMtpAvailable ? nativeMtpItem : externalMtpItem;
-        mtpSource.SelectionChanged += (_, _) => { RefreshMtpSettings(); dirty = true; };
         mtpSettings.Children.Add(mtpSource);
         var externalMtpSettings = new StackPanel { Margin = new Thickness(12, 6, 0, 0) };
         var mtpDraftPath = Field(externalMtpSettings, "外部 MTP Draft GGUF 路徑", J.S(model, "mtp_draft_path"));
@@ -518,6 +517,7 @@ public partial class MainWindow : Window
             string source = (mtpSource.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "external";
             externalMtpSettings.Visibility = enabled && source == "external" ? Visibility.Visible : Visibility.Collapsed;
         }
+        mtpSource.SelectionChanged += (_, _) => { RefreshMtpSettings(); dirty = true; };
         mtp.Checked += (_, _) => RefreshMtpSettings();
         mtp.Unchecked += (_, _) => RefreshMtpSettings();
         RefreshMtpSettings();
