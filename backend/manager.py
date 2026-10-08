@@ -1608,7 +1608,10 @@ class Manager:
         if model.get("keep_loaded"):
             return None
         minutes = model.get("idle_minutes")
-        return float(self.config["idle_minutes"] if minutes is None else minutes) * 60
+        resolved = float(self.config["idle_minutes"] if minutes is None else minutes)
+        if resolved <= 0:
+            return None
+        return resolved * 60
 
     def status(self):
         idle = max(0, time.monotonic() - self.last_used) if not self.tickets else 0
