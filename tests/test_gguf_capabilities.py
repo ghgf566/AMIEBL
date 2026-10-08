@@ -81,6 +81,71 @@ class AtomicWriteTests(unittest.TestCase):
             self.assertEqual(target.read_text(encoding="utf-8"), "ok\n")
             self.assertEqual(calls, 2)
 
+class CapabilityMergeTests(unittest.TestCase):
+    def test_detection_clamps_context_and_resets_stale_reasoning_on_path_change(self):
+        model = {
+            "context": 32768,
+            "mtp": True,
+            "mtp_source": "native",
+            "mtp_draft_max": 3,
+            "reasoning_capability": "toggle",
+            "reasoning_efforts": ["low", "medium", "xhigh"],
+            "reasoning_default_effort": "xhigh",
+            "reasoning_budget_supported": True,
+            "reasoning_toggle_keys": ["enable_thinking"],
+            "reasoning_detection": "runtime",
+            "reasoning_supported": True,
+        }
+        detected = {
+            "native_context": 8192,
+            "mtp_capability": "unavailable",
+            "mtp_layers": 0,
+            "reasoning_capability": "unknown",
+            "reasoning_efforts": [],
+            "reasoning_default_effort": "",
+            "reasoning_budget_supported": False,
+            "reasoning_toggle_keys": [],
+            "reasoning_detection": "pending",
+        }
+        manager.apply_detected_model_capabilities(model, detected, reset_reasoning=True)
+        self.assertEqual(model["context"], 8192)
+        self.assertEqual(model["native_context"], 8192)
+        self.assertFalse(model["mtp"])
+        self.assertIsNone(model["mtp_draft_max"])
+        self.assertEqual(model["reasoning_capability"], "unknown")
+        self.assertEqual(model["reasoning_efforts"], [])
+        self.assertFalse(model["reasoning_supported"])
+
+    def test_reinspection_preserves_runtime_reasoning_when_template_is_ambiguous(self):
+        model = {
+            "context": 4096,
+            "mtp": False,
+            "mtp_source": "external",
+            "mtp_draft_max": None,
+            "reasoning_capability": "toggle",
+            "reasoning_efforts": ["low", "medium"],
+            "reasoning_default_effort": "medium",
+            "reasoning_budget_supported": True,
+            "reasoning_toggle_keys": ["enable_thinking"],
+            "reasoning_detection": "runtime",
+            "reasoning_supported": True,
+        }
+        detected = {
+            "native_context": 0,
+            "mtp_capability": "unavailable",
+            "mtp_layers": 0,
+            "reasoning_capability": "unknown",
+            "reasoning_efforts": [],
+            "reasoning_default_effort": "",
+            "reasoning_budget_supported": False,
+            "reasoning_toggle_keys": [],
+            "reasoning_detection": "pending",
+        }
+        manager.apply_detected_model_capabilities(model, detected, reset_reasoning=False)
+        self.assertEqual(model["reasoning_capability"], "toggle")
+        self.assertEqual(model["reasoning_efforts"], ["low", "medium"])
+        self.assertEqual(model["reasoning_detection"], "runtime")
+
 class FitCommandTests(unittest.TestCase):
     def test_custom_fit_target_reaches_llama_fit_params(self):
         model = {
