@@ -42,3 +42,13 @@ WPF uses `--smoke-test --editor-refresh-test --data-dir ...`. Core regressions c
 Real picker interaction, tray menu clicks, VS Code writes, installer behavior, other Windows versions and GGUF families require separate acceptance testing. The frontend migration does not establish new inference compatibility guarantees.
 
 The publish target explicitly includes the app PRI and compiled XBF resources; compiling successfully alone does not validate an unpackaged release. Use tests/Test-Desktop.ps1 with FrontendDirectory to test the exact published artifact in a fresh isolated directory; it checks process exit and fresh result files.
+
+## UI/UX parity pass
+
+WinUI now groups model, Profile, system and overview controls into cards. Thinking capability has its own visible section. Advanced sampling and Agent fields can collapse. Context, CPU threads, thinking budget and generation limit support sliders alongside exact entry; initialization does not modify saved values and unknown native Context uses the supported input range. Inline guidance explains load-time versus request-time behavior.
+
+Model library provides add/change/remove search locations, matching the WPF registration semantics without moving files. Task history has a bounded left list, a separate scrollable detail area, and collapsible logs with copy/open-folder actions. Polling keeps the task-page containers and selected request instead of rebuilding the entire page.
+
+The clean navigation path no longer disables and restores NavigationView for every click. A dedicated composition indicator replaces the template indicator and retargets its Offset animation; Windows animation preference is respected. API reference: https://learn.microsoft.com/en-us/windows/windows-app-sdk/api/winrt/microsoft.ui.composition.implicitanimationcollection?view=windows-app-sdk-1.8
+
+The isolated native test now requires slider_sync_verified, model_locations_verified and rapid_navigation_verified. It tests 15 navigation changes at 25 ms intervals and produces the five page screenshots plus detailed performance/budget views. This validates final selection and layout, not a frame-by-frame visual smoothness benchmark on all display configurations.

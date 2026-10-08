@@ -20,7 +20,7 @@ public sealed partial class MainWindow
     {
         var grid=new Grid { ColumnSpacing=24 };
         grid.ColumnDefinitions.Add(new() { Width=new GridLength(240) }); grid.ColumnDefinitions.Add(new() { Width=new GridLength(1,GridUnitType.Star) });
-        var left=Panel(); entityList=new ListView { MaxHeight=440, SelectionMode=ListViewSelectionMode.Single, DisplayMemberPath="Name" };
+        var left=Panel(); entityList=new ListView { MaxHeight=300, Foreground=new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255,240,243,249)),SelectionMode=ListViewSelectionMode.Single, DisplayMemberPath="Name" };
         PopulateList(collection);
         var search=new TextBox { PlaceholderText="搜尋名稱／ID" };
         search.TextChanged += (_, _) =>
@@ -33,7 +33,7 @@ public sealed partial class MainWindow
         };
         left.Children.Add(search); left.Children.Add(entityList);
         entityEditor=new ContentControl { HorizontalContentAlignment=HorizontalAlignment.Stretch };
-        Grid.SetColumn(entityEditor,1); grid.Children.Add(left); grid.Children.Add(entityEditor);
+        Grid.SetColumn(entityEditor,1); grid.Children.Add(Scroll(left)); grid.Children.Add(entityEditor);
         entityList.SelectionChanged += async (_, _) =>
         {
             if (selecting) return;
@@ -46,7 +46,10 @@ public sealed partial class MainWindow
                 else RestoreEntitySelection(collection);
             });
         };
-        if (collection=="models") left.Children.Add(Row(Action("加入 GGUF",AddModel),Action("掃描",ScanModels)));
+        if (collection=="models") {
+            left.Children.Add(Row(Action("加入 GGUF",AddModel),Action("掃描",ScanModels)));
+            left.Children.Add(BuildModelLocations());
+        }
         else left.Children.Add(Row(Action("新增",AddProfile),Action("複製",DuplicateProfile)));
         string? selected=collection=="models" ? vm.SelectedModelId : vm.SelectedProfileId;
         var first=J.A(vm.Config,collection).FirstOrDefault(x=>J.S(x,"id")==selected) ?? J.A(vm.Config,collection).FirstOrDefault();
@@ -90,7 +93,21 @@ public sealed partial class MainWindow
     }
     private UIElement BuildForm(SettingsEditorViewModel draft)
     {
-        inputs.Clear(); var panel=Panel();
+        inputs.Clear(); sliders.Clear(); var panel=Panel();
+        var sections=new Dictionary<string,StackPanel>();
+        StackPanel Section(string title)
+        {
+            if(sections.TryGetValue(title,out var existing))return existing;
+            var content=Panel(); sections[title]=content;
+            if(title is "進階採樣" or "VS Code Agent") panel.Children.Add(new Expander { Header=title,Content=content,HorizontalAlignment=HorizontalAlignment.Stretch });
+            else panel.Children.Add(Card(title,content));
+            return content;
+        }
+        if(draft.Collection=="models")
+        {
+            capabilityText=Text(ModelCapability(draft.Id));
+            panel.Children.Add(Card("Thinking 支援 · 自動偵測",capabilityText));
+        }
         panel.Children.Add(Text(draft.Collection=="models" ? "載入參數需重新載入；採樣與預設模式供後續請求使用。" : draft.Collection=="profiles" ? "客戶端明確 reasoning 設定優先；自訂上限需引擎辨識思考結束標記。" : "連線埠與啟動設定可能需重啟才能生效。"));
         if (draft.Collection!="system") panel.Children.Add(Text("識別："+draft.Id));
         var blocks=new List<(FieldSpec spec,UIElement block)>();
@@ -115,7 +132,10 @@ public sealed partial class MainWindow
             inputs[field.Spec.Key]=control; block.Children.Add(control);
             if (field.Spec.Key is "path" or "mmproj" or "mtp_draft_path") block.Children.Add(Action("選擇 GGUF",async ()=> { var path=await PickFile(".gguf"); if(path is not null)field.Value=path; }));
             if (field.Spec.Key=="engine_dir") block.Children.Add(Action("選擇資料夾",async ()=> { var path=await PickFolder(); if(path is not null)field.Value=path; }));
-            panel.Children.Add(block); blocks.Add((field.Spec,block));
+            if(field.Spec.Key is "context" or "cpu_threads" or "thinking_budget" or "max_tokens") AddSlider(block,field,draft);
+            var hint=FieldHelp(field.Spec.Key,draft.Collection);
+            if(!string.IsNullOrEmpty(hint)) { var help=Text(hint,12);help.Opacity=0.72;block.Children.Add(help); }
+            Section(FieldSection(field.Spec.Key,draft.Collection)).Children.Add(block); blocks.Add((field.Spec,block));
         }
         void Dependencies()
         {
@@ -123,7 +143,7 @@ public sealed partial class MainWindow
             foreach (var (spec,block) in blocks) if (spec.Enabled is not null) ((FrameworkElement)block).Visibility=spec.Enabled(preview) ? Visibility.Visible : Visibility.Collapsed;
         }
         draft.PropertyChanged += (_, e)=> { if(e.PropertyName==nameof(draft.Preview)) Dependencies(); }; Dependencies();
-        panel.Children.Add(Row(Action("儲存設定",SaveEditor),Action("重新讀取",async ()=>
+        panel.Children.Insert(0,Row(Action("儲存設定",SaveEditor),Action("重新讀取",async ()=>
         {
             if(vm.Editor.IsDirty && !await Confirm("捨棄尚未儲存的修改，重新讀取已保存設定？"))return;
             await vm.RefreshConfig();
@@ -133,7 +153,7 @@ public sealed partial class MainWindow
         if (draft.Collection=="models")
         {
             panel.Children.Add(Row(Action("載入／重新載入",async ()=> { await SaveEditor(); await api!.Post("/manager/load",new JsonObject { ["model_id"]=draft.Id }); await Poll(); }),Action("設為預設",async ()=> { await SaveEditor(); await vm.SaveConfig(c=>c["default_model_id"]=draft.Id); Message("已設為預設模型。"); }),Action("移除登錄",DeleteEntity)));
-            capabilityText=Text(ModelCapability(draft.Id)); panel.Children.Add(capabilityText);
+
         }
         else if (draft.Collection=="profiles") panel.Children.Add(Action("刪除此模式",DeleteEntity));
         return panel;
@@ -141,8 +161,17 @@ public sealed partial class MainWindow
     private string ModelCapability(string id)
     {
         var model=vm.Model(id)?.Data;
-        return "原生 Context："+J.S(model,"native_context","未知")+"\nMTP："+J.S(model,"mtp_capability","未知")+"\nReasoning："+J.S(model,"reasoning_capability","未知")+"\n偵測來源："+J.S(model,"reasoning_detection","未知")+"\nNative effort："+string.Join(", ",J.A(model,"reasoning_efforts"))+
-        "\n已儲存 Context："+J.S(model,"context")+"；引擎使用中："+(J.S(vm.Status,"model_id")==id ? J.S(vm.Status["loaded_model_settings"],"context","尚未載入") : "此模型未載入")+"\n模板標記僅為 budget 候選能力，是否生效仍取決於引擎 parser。\n視覺 projector／外部 Draft 額外記憶體未包含於獨立 fit 估算。";
+        string capability=J.S(model,"reasoning_capability","unknown");
+        string supported=capability switch { "toggle"=>"可切換 Thinking / Non-Thinking", "always"=>"具有思考能力；模板未提供可靠的關閉方式", "none"=>"未偵測到可控制的思考能力", _=>"尚未確認思考能力" };
+        var efforts=J.A(model,"reasoning_efforts");
+        return supported+"\n原生 Effort："+(efforts.Count>0?string.Join(" / ",efforts):"未提供")+
+            "\n模型預設 Effort："+(string.IsNullOrWhiteSpace(J.S(model,"reasoning_default_effort"))?"未提供":J.S(model,"reasoning_default_effort"))+
+            "\n"+(J.B(model,"reasoning_budget_supported")?"模板含思考標記，可嘗試自動 Budget。":"尚未確認自動 Budget；自訂上限仍會傳給引擎。")+
+            "\n原生 Effort 控制思考深度；自訂 token 預算控制上限。是否能截斷仍取決於 llama.cpp parser，傳送參數不代表已生效。"+
+            "\n偵測來源："+(J.S(model,"reasoning_detection")=="runtime"?"llama.cpp /props 驗證":J.S(model,"reasoning_detection")=="gguf"?"GGUF Chat Template":"尚未完成偵測")+
+            "\n模板開關："+(J.A(model,"reasoning_toggle_keys").Count>0?string.Join(" / ",J.A(model,"reasoning_toggle_keys")):"未提供")+
+            "\n原生 Context："+(J.I(model,"native_context")>0?J.S(model,"native_context"):"未知")+" · MTP："+J.S(model,"mtp_capability","未知")+
+            "\n已儲存 Context："+J.S(model,"context")+" · 引擎使用中："+(J.S(vm.Status,"model_id")==id?J.S(vm.Status["loaded_model_settings"],"context","尚未載入"):"此模型未載入");
     }
     private async Task SaveEditor()
     {
