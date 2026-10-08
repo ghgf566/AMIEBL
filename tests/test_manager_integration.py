@@ -158,6 +158,16 @@ class ManagerIntegration(unittest.TestCase):
         profiles[0].update(thinking_mode="auto", **changes)
         self.save(profiles=profiles)
 
+    def test_legacy_reasoning_profile_is_migrated_to_model_agnostic_schema(self):
+        config = self.get("/manager/config")
+        coding = next(x for x in config["profiles"] if x["id"] == "coding")
+        quick = next(x for x in config["profiles"] if x["id"] == "quick-chat")
+        self.assertEqual(coding["reasoning_level"], "balanced")
+        self.assertEqual(quick["reasoning_level"], "light")
+        self.assertEqual(coding["budget_mode"], "custom")
+        model = next(x for x in config["models"] if x["id"] == "test-model")
+        self.assertEqual(model["reasoning_capability"], "toggle")
+        self.assertEqual(model["reasoning_toggle_keys"], ["enable_thinking"])
     def test_legacy_fit_target_is_preserved_as_explicit_override(self):
         config = self.get("/manager/config")
         model = next(x for x in config["models"] if x["id"] == "test-model")
@@ -655,7 +665,7 @@ class ManagerIntegration(unittest.TestCase):
             item = copy.deepcopy(original)
             item["models"][0][key] = value
             invalid.append((label, item))
-        for key, value in (("thinking_mode", "surprise"), ("thinking_budget", -1), ("max_tokens", 0)):
+        for key, value in (("thinking_mode", "surprise"), ("reasoning_level", "ultra"), ("budget_mode", "mystery"), ("thinking_budget", -1), ("max_tokens", 0)):
             item = copy.deepcopy(original)
             item["profiles"][0][key] = value
             invalid.append((key, item))
