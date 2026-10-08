@@ -671,20 +671,62 @@ class ManagerIntegration(unittest.TestCase):
         self.assertEqual(self.get("/manager/status")["state"], "unloaded")
         self.assertEqual(len(self.events("start")), 1)
 
-    def test_model_changes_wait_for_explicit_reload(self):
+    def test_model_load_settings_wait_for_explicit_reload_and_same_model_load_applies_them(self):
         self.load()
-        models = copy.deepcopy(self.config["models"])
-        models[0]["context"] = 4096
-        self.save(models=models)
+        config = self.get("/manager/config")
+        model = next(x for x in config["models"] if x["id"] == "test-model")
+        model.update(context=4096, cpu_threads=3, cache_type="q4_0", auto_fit=False, gpu_layers=-1)
+        response = self.api("PUT", "/manager/config", json=config)
+        self.assertEqual(response.status_code, 200, response.text)
         status = self.get("/manager/status")
         self.assertEqual(status["state"], "ready")
         self.assertTrue(status["pending_config"])
         self.assertEqual(len(self.events("start")), 1)
-        self.api("POST", "/manager/unload", json={})
-        eventually(lambda: self.get("/manager/status")["state"] == "unloaded")
-        self.load()
+
+        # Re-loading the same model ID must not be treated as a no-op when
+        # engine-affecting settings changed.
+        response = self.api("POST", "/manager/load", json={"model_id": "test-model"})
+        self.assertEqual(response.status_code, 200, response.text)
+        eventually(lambda: len(self.events("start")) == 2 and self.get("/manager/status")["state"] == "ready")
         self.assertFalse(self.get("/manager/status")["pending_config"])
-        self.assertEqual(len(self.events("start")), 2)
+        argv = self.events("start")[-1]["argv"]
+        self.assertEqual(argv[argv.index("-c") + 1], "4096")
+        self.assertEqual(argv[argv.index("-t") + 1], "3")
+        self.assertEqual(argv[argv.index("-tb") + 1], "3")
+        self.assertEqual(argv[argv.index("-ctk") + 1], "q4_0")
+        self.assertEqual(argv[argv.index("-ctv") + 1], "q4_0")
+        self.assertEqual(argv[argv.index("-ngl") + 1], "-1")
+
+    def test_request_time_model_settings_apply_without_engine_reload(self):
+        self.load()
+        config = self.get("/manager/config")
+        model = next(x for x in config["models"] if x["id"] == "test-model")
+        model.update(temperature=0.17, top_p=0.77, top_k=23, min_p=0.03)
+        response = self.api("PUT", "/manager/config", json=config)
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertFalse(self.get("/manager/status")["pending_config"])
+        r = self.completion()
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(len(self.events("start")), 1)
+        forwarded = self.events("post")[-1]["body"]
+        self.assertEqual(forwarded["temperature"], 0.17)
+        self.assertEqual(forwarded["top_p"], 0.77)
+        self.assertEqual(forwarded["top_k"], 23)
+        self.assertEqual(forwarded["min_p"], 0.03)
+
+    def test_changing_model_path_clears_stale_reasoning_capabilities(self):
+        other = self.model_dir / "other-model.gguf"
+        other.write_bytes(b"GGUFfake-test-only")
+        config = self.get("/manager/config")
+        model = next(x for x in config["models"] if x["id"] == "test-model")
+        self.assertEqual(model["reasoning_capability"], "toggle")
+        model["path"] = str(other)
+        response = self.api("PUT", "/manager/config", json=config)
+        self.assertEqual(response.status_code, 200, response.text)
+        saved = next(x for x in response.json()["models"] if x["id"] == "test-model")
+        self.assertEqual(saved["reasoning_capability"], "unknown")
+        self.assertEqual(saved["reasoning_efforts"], [])
+        self.assertFalse(saved["reasoning_supported"])
 
     def test_management_requires_token_and_does_not_leak_it(self):
         for method, path in (("GET", "/manager/config"), ("GET", "/manager/status"), ("POST", "/manager/load"), ("POST", "/manager/shutdown"), ("GET", "/manager/export")):
