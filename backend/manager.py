@@ -1046,8 +1046,16 @@ class Manager:
             try:
                 if not Path(model["path"]).is_file():
                     raise ValueError("模型檔案不存在，請在模型庫重新選擇位置。")
-                if model["vision"] and not Path(model["mmproj"]).is_file():
-                    raise ValueError("視覺模型檔案不存在，請重新指定。")
+                if model["vision"]:
+                    projector_path = Path(model["mmproj"])
+                    if not projector_path.is_file():
+                        raise ValueError("視覺模型檔案不存在，請重新指定。")
+                    try:
+                        with projector_path.open("rb") as projector_file:
+                            if projector_file.read(4) != b"GGUF":
+                                raise ValueError("指定的視覺模型不是有效的 GGUF 檔案。")
+                    except OSError as exc:
+                        raise ValueError("無法讀取視覺模型 GGUF。") from exc
                 if model.get("mtp"):
                     if model.get("mtp_source", "native") == "native":
                         detected_mtp = inspect_gguf_capabilities(model["path"])
@@ -1075,7 +1083,7 @@ class Manager:
                 args = ["-m", model["path"], "--alias", model["id"], "-c", str(model["context"]),
                         "-ctk", model["cache_type"], "-ctv", model["cache_type"], "--fit", "off", "-ngl", str(layers),
                         "-t", thread_arg, "-tb", thread_arg, "--jinja", "--reasoning-effort", "default", "--reasoning-budget", "-1",
-                        "--no-reasoning-preserve", "--timeout", "18000", "--sse-ping-interval", "10",
+                        "--timeout", "18000", "--sse-ping-interval", "10",
                         "--host", "127.0.0.1", "--port", str(engine_port), "-np", "1", "--slots", "--metrics"]
                 if model["mtp"]:
                     draft_max = model.get("mtp_draft_max")
@@ -1083,7 +1091,10 @@ class Manager:
                     if model.get("mtp_source", "native") == "external":
                         args += ["--spec-draft-model", model["mtp_draft_path"]]
                 if model["vision"]:
-                    args += ["--mmproj", model["mmproj"], "--image-min-tokens", "1024"]
+                    # Let llama.cpp read the image-token policy from the model/projector.
+                    # AMIEBL does not expose an image-min-tokens setting, so it must not
+                    # silently override the model's own default.
+                    args += ["--mmproj", model["mmproj"]]
                 self.process = subprocess.Popen(command + args, cwd=self.config["engine_dir"], stdout=subprocess.PIPE,
                                                 stderr=subprocess.STDOUT, creationflags=HIDDEN)
                 threading.Thread(target=self._drain_engine, args=(self.process,), daemon=True).start()
