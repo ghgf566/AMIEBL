@@ -1448,8 +1448,26 @@ class Manager:
             ticket.record.update(effort=effort, thinking_budget=budget)
             return body
         capability = model.get("reasoning_capability", "unknown")
-        if capability in ("none", "unknown") or p["thinking_mode"] == "model":
-            ticket.record["decision"] = "跟隨模型預設" if p["thinking_mode"] == "model" else "此模型未提供可控制的思考能力"
+        if p["thinking_mode"] == "model":
+            ticket.record["decision"] = "跟隨模型預設"
+            return body
+        if capability == "none":
+            ticket.record["decision"] = "此模型未提供可控制的思考能力"
+            return body
+        if capability == "unknown":
+            # Do not guess how to enable/disable reasoning when the template is
+            # unknown. A user-selected custom budget is still safe to forward
+            # as a passive ceiling: it does not turn reasoning on by itself.
+            if p.get("budget_mode", "auto") == "custom" and p["thinking_mode"] != "off":
+                budget = min(int(p["thinking_budget"]), max_budget)
+                body["thinking_budget_tokens"] = budget
+                ticket.record.update(
+                    decision="模型思考控制尚未確認；僅套用自訂思考 Token 上限",
+                    reasoning_level=p["reasoning_level"],
+                    thinking_budget=budget,
+                )
+            else:
+                ticket.record["decision"] = "模型思考控制尚未確認，沿用模型預設"
             return body
 
         decision = {"thinking": p["thinking_mode"] != "off", "level": p["reasoning_level"]}
