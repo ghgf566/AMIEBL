@@ -1514,10 +1514,12 @@ class Manager:
             if key in body:
                 body[key] = cap
         ticket.record["max_tokens"] = cap
+        # Explicit Model Library sampler settings must override client defaults.
+        # Auto/None preserves the client's value or llama.cpp native default.
         for key in ("temperature", "top_p", "top_k", "min_p"):
             val = model.get(key)
             if val is not None:
-                body.setdefault(key, val)
+                body[key] = val
         kwargs = body.get("chat_template_kwargs") or {}
         reasoning = body.get("reasoning") if isinstance(body.get("reasoning"), dict) else {}
         explicit = any(k in body for k in ("reasoning_effort", "thinking_budget_tokens")) or "effort" in reasoning or any(k in kwargs for k in ("enable_thinking", "thinking", "thinking_mode", "add_nothink_token", "reasoning_effort", "reasoning_strength", "thinking_budget", "thinking_budget_tokens"))
