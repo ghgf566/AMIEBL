@@ -827,6 +827,9 @@ class Manager:
             shutil.copy2(self.config_path, backup / (dt.datetime.now().strftime("%Y%m%d-%H%M%S-%f") + "-config.json"))
         atomic_json(self.config_path, c)
         self.config = c
+        if hasattr(self, "history"):
+            self.prune_history()
+            self.prune_request_body_logs()
         files = sorted(backup.glob("*-config.json"))
         for p in files[:-20]:
             p.unlink(missing_ok=True)
@@ -1309,6 +1312,30 @@ class Manager:
             self.write_body_log(ticket)
         return ticket
 
+    def prune_history(self) -> None:
+        cutoff = time.time() - self.config["log_retention_days"] * 86400
+        kept = []
+        for row in self.history:
+            try:
+                if dt.datetime.fromisoformat(row["started_at"]).timestamp() >= cutoff:
+                    kept.append(row)
+            except (KeyError, TypeError, ValueError):
+                continue
+        self.history = deque(kept[-MAX_HISTORY:], maxlen=MAX_HISTORY)
+        atomic_json(self.data / "history.json", list(self.history))
+
+    def prune_request_body_logs(self) -> None:
+        logs = self.data / "request-bodies"
+        if not logs.is_dir():
+            return
+        files = sorted(logs.glob("*.json"), key=lambda p: p.stat().st_mtime)
+        cutoff = time.time() - self.config["log_retention_days"] * 86400
+        for index, path in enumerate(files):
+            try:
+                if index < len(files) - 100 or path.stat().st_mtime < cutoff:
+                    path.unlink(missing_ok=True)
+            except OSError:
+                pass
     def write_body_log(self, ticket):
         logs = self.data / "request-bodies"
         logs.mkdir(exist_ok=True)
@@ -1316,11 +1343,7 @@ class Manager:
         text = json.dumps(ticket.body, ensure_ascii=False)
         if len(text.encode("utf-8")) <= 1024 * 1024:
             atomic_text(logs / (ticket.record["id"] + ".json"), text)
-        files = sorted(logs.glob("*.json"), key=lambda p: p.stat().st_mtime)
-        cutoff = time.time() - self.config["log_retention_days"] * 86400
-        for index, path in enumerate(files):
-            if index < len(files) - 100 or path.stat().st_mtime < cutoff:
-                path.unlink(missing_ok=True)
+        self.prune_request_body_logs()
 
     def finish(self, ticket, phase, error=None):
         if ticket.done.is_set():
@@ -1334,7 +1357,7 @@ class Manager:
         ticket.done.set()
         self.history.append(copy.deepcopy(ticket.record))
         self.tickets.pop(ticket.record["id"], None)
-        atomic_json(self.data / "history.json", list(self.history))
+        self.prune_history()
         self.last_used = time.monotonic()
         self.log(f"任務 {ticket.record['id'][:8]}：{phase}。")
 
