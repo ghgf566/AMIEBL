@@ -783,6 +783,23 @@ class ManagerIntegration(unittest.TestCase):
         self.assertFalse(self.get("/manager/status")["pending_config"])
         forwarded = self.events("post")[-1]["body"]
         self.assertLessEqual(forwarded["max_tokens"], 3000)
+    def test_active_auto_fit_reserve_change_marks_model_reload_pending(self):
+        config = self.get("/manager/config")
+        model = next(x for x in config["models"] if x["id"] == "test-model")
+        model.update(auto_fit=True, fit_target_enabled=True, fit_target_mib=2048)
+        response = self.api("PUT", "/manager/config", json=config)
+        self.assertEqual(response.status_code, 200, response.text)
+        self.load()
+        self.assertFalse(self.get("/manager/status")["pending_model_reload"])
+
+        config = self.get("/manager/config")
+        model = next(x for x in config["models"] if x["id"] == "test-model")
+        model["fit_target_mib"] = 3072
+        response = self.api("PUT", "/manager/config", json=config)
+        self.assertEqual(response.status_code, 200, response.text)
+        status = self.get("/manager/status")
+        self.assertTrue(status["pending_model_reload"])
+        self.assertTrue(status["pending_config"])
     def test_default_profile_change_applies_without_engine_reload(self):
         self.load()
         config = self.get("/manager/config")
