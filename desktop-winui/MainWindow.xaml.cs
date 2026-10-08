@@ -40,7 +40,7 @@ public sealed partial class MainWindow : Window
     public MainWindow(string[] arguments)
     {
         this.arguments = arguments; host = new(arguments);
-        InitializeComponent(); Root.DataContext = vm; TitleText.Text="正在啟動"; PageHost.Content=Text("正在連接本機服務…",18);
+        InitializeComponent(); VersionText.Text="v"+typeof(App).Assembly.GetName().Version!.ToString(3); Root.DataContext = vm; TitleText.Text="正在啟動"; PageHost.Content=Text("正在連接本機服務…",18);
         AppWindow.Resize(new Windows.Graphics.SizeInt32(1240,860));
         AppWindow.Closing += async (_, e) =>
         {

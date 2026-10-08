@@ -13,7 +13,7 @@ $backendTarget = Join-Path $destination 'backend'
 New-Item -ItemType Directory -Force -Path $backendTarget | Out-Null
 Get-ChildItem -LiteralPath (Join-Path $PSScriptRoot 'backend') -File | Where-Object { $_.Extension -in '.py','.txt','.json' } | ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination $backendTarget -Force }
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'assets\manager.ico') -Destination (Join-Path $destination 'manager.ico') -Force
-foreach ($document in @('使用說明.md','DESKTOP-ARCHITECTURE.md')) {
+foreach ($document in @('使用說明.md','DESKTOP-ARCHITECTURE.md','PRODUCT-IDENTITY.md')) {
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot $document) -Destination $destination -Force
 }
 $commit = & git -C $PSScriptRoot rev-parse HEAD
