@@ -1,0 +1,72 @@
+name: Release safety and build
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  regression:
+    name: Python and .NET regression (Windows)
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Install Python backend test dependencies
+        run: python -m pip install -r backend/requirements.txt
+      - name: Run Python tests
+        run: python -m unittest discover -s tests -p "test_*.py" -v
+      - name: Run shared desktop editor regression
+        run: dotnet run --project tests/DesktopCoreRegression -c Release
+      - name: Verify portable vs installed data and non-destructive migration
+        run: dotnet run --project tests/DesktopPlatformRegression -c Release
+
+  windows-installer:
+    name: Publish, compile and exercise installers (isolated Windows runner)
+    runs-on: windows-latest
+    timeout-minutes: 40
+    needs: regression
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Build the default WinUI release
+        shell: pwsh
+        run: |
+          .\build.ps1 -OutputDirectory (Join-Path $env:RUNNER_TEMP 'winui-build')
+      - name: Install Inno Setup compiler on disposable runner if needed
+        shell: pwsh
+        run: |
+          $inno = Join-Path ([Environment]::GetFolderPath('ProgramFilesX86')) 'Inno Setup 6\ISCC.exe'
+          if (-not (Test-Path -LiteralPath $inno)) {
+            choco install innosetup --yes --no-progress
+            if ($LASTEXITCODE -ne 0) { throw "Inno Setup installation failed: $LASTEXITCODE" }
+          }
+          if (-not (Test-Path -LiteralPath $inno)) { throw 'ISCC.exe missing after Inno Setup installation.' }
+      - name: Package Portable and compile EXE installer
+        shell: pwsh
+        run: |
+          # Package compilation requires an engine file, but the CI fixture
+          # never starts it or loads a model.
+          $engine = Join-Path $env:RUNNER_TEMP 'fake-llama'
+          New-Item -Path $engine -ItemType Directory -Force | Out-Null
+          Set-Content -LiteralPath (Join-Path $engine 'llama-server.exe') -Value 'CI fixture only, not an executable'
+          .\package.ps1 -LlamaRoot $engine -BuildInstaller -OutputDirectory (Join-Path $env:RUNNER_TEMP 'package')
+      - name: Verify both installers preserve user data
+        shell: pwsh
+        run: |
+          .\tests\Test-ReleasePackaging.ps1 -PortableDirectory (Join-Path $env:RUNNER_TEMP 'package\portable') -SetupExe (Join-Path $env:RUNNER_TEMP 'package\installer\LocalModelManager-Setup.exe')
