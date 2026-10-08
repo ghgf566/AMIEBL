@@ -636,6 +636,14 @@ def apply_reasoning_toggle(kwargs: dict, toggle_keys: list[str], enabled: bool) 
             result[key] = not enabled
     return result
 
+def build_fit_params_command(engine_dir: str, model: dict) -> list[str]:
+    fit = Path(engine_dir) / "llama-fit-params.exe"
+    cmd = [str(fit), "-m", model["path"], "-c", str(model["context"]),
+           "-ctk", model["cache_type"], "-ctv", model["cache_type"]]
+    if model.get("fit_target_enabled", False):
+        cmd += ["--fit-target", str(model["fit_target_mib"])]
+    return cmd
+
 class CancelledRequest(Exception):
     pass
 
@@ -966,13 +974,10 @@ class Manager:
         fit = Path(self.config["engine_dir"]) / "llama-fit-params.exe"
         if not fit.is_file():
             raise ValueError("找不到 llama-fit-params.exe；請選擇完整引擎資料夾，或關閉自動 GPU 分配。")
-        cmd = [str(fit), "-m", model["path"], "-c", str(model["context"]), "-ctk", model["cache_type"],
-               "-ctv", model["cache_type"]]
         # Omit --fit-target unless the user explicitly overrides it, so
         # llama-fit-params can use llama.cpp's native default (currently
         # 1024 MiB per device) and follow future upstream default changes.
-        if model.get("fit_target_enabled", False):
-            cmd += ["--fit-target", str(model["fit_target_mib"])]
+        cmd = build_fit_params_command(self.config["engine_dir"], model)
         # Keep this invocation aligned with interactive-start.ps1. The
         # current llama-fit-params binary does not accept --mmproj; the
         # projector is passed to llama-server after the layer count is known.
