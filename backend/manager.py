@@ -1363,12 +1363,6 @@ class Manager:
             body["thinking_budget_tokens"] = budget
 
         ticket.record.update(effort=native_effort, thinking_budget=budget)
-        if native_effort:
-            ticket.record["decision"] = (ticket.record.get("decision") or "思考已啟用") + f"；映射模型 Effort={native_effort}"
-        elif budget is not None:
-            ticket.record["decision"] = (ticket.record.get("decision") or "思考已啟用") + f"；以 Budget={budget} 模擬強度"
-        else:
-            ticket.record["decision"] = (ticket.record.get("decision") or "思考已啟用") + "；模型僅提供思考開關"
         return body
 
     async def process_ticket(self, ticket):
