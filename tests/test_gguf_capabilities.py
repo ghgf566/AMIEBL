@@ -19,10 +19,12 @@ def gguf_string(value: str) -> bytes:
     return struct.pack("<Q", len(data)) + data
 
 
-def write_fixture(path: Path, *, nextn_layers: int | None, nextn_tensor: bool, context_length: int = 262144) -> None:
+def write_fixture(path: Path, *, nextn_layers: int | None, nextn_tensor: bool, context_length: int = 262144, chat_template: str = "") -> None:
     kv = []
     kv.append(gguf_string("general.architecture") + struct.pack("<I", 8) + gguf_string("qwen35"))
     kv.append(gguf_string("qwen35.context_length") + struct.pack("<I", 4) + struct.pack("<I", context_length))
+    if chat_template:
+        kv.append(gguf_string("tokenizer.chat_template") + struct.pack("<I", 8) + gguf_string(chat_template))
     if nextn_layers is not None:
         kv.append(
             gguf_string("qwen35.nextn_predict_layers")
@@ -56,6 +58,65 @@ class FitOutputTests(unittest.TestCase):
 
     def test_parses_all_gpu_layers_sentinel(self):
         self.assertEqual(manager.parse_fit_gpu_layers("-c 65536 -ngl -1"), -1)
+
+class ReasoningTemplateTests(unittest.TestCase):
+    def test_qwen_native_effort_and_toggle(self):
+        template = """
+        {% if enable_thinking is undefined or enable_thinking is true %}
+        {% set resolved_reasoning_effort = reasoning_effort|default('xhigh') %}
+        {% if resolved_reasoning_effort not in ('xhigh', 'medium', 'low') %}{{ raise_exception('bad') }}{% endif %}
+        {{ '<think>' }}
+        {% else %}{{ '<think></think>' }}{% endif %}
+        """
+        result = manager.analyze_reasoning_template(template)
+        self.assertEqual(result["reasoning_capability"], "toggle")
+        self.assertEqual(result["reasoning_efforts"], ["low", "medium", "xhigh"])
+        self.assertEqual(result["reasoning_default_effort"], "xhigh")
+        self.assertTrue(result["reasoning_budget_supported"])
+        self.assertIn("enable_thinking", result["reasoning_toggle_keys"])
+
+    def test_deepseek_plain_thinking_kwarg(self):
+        template = """
+        {% if not thinking is defined %}{% set thinking = false %}{% endif %}
+        {% if not thinking %}{{ '</think>' }}{% else %}{{ '<think>' }}{% endif %}
+        """
+        result = manager.analyze_reasoning_template(template)
+        self.assertEqual(result["reasoning_capability"], "toggle")
+        self.assertEqual(result["reasoning_efforts"], [])
+        self.assertIn("thinking", result["reasoning_toggle_keys"])
+
+    def test_glm_enable_thinking_toggle(self):
+        template = """
+        <|assistant|>{{ '\\n<think></think>' if (enable_thinking is defined and not enable_thinking) else '' }}
+        """
+        result = manager.analyze_reasoning_template(template)
+        self.assertEqual(result["reasoning_capability"], "toggle")
+        self.assertIn("enable_thinking", result["reasoning_toggle_keys"])
+
+    def test_gemma_like_template_without_reasoning(self):
+        template = "{% for message in messages %}{{ message.role }}: {{ message.content }}{% endfor %}"
+        result = manager.analyze_reasoning_template(template)
+        self.assertEqual(result["reasoning_capability"], "none")
+        self.assertEqual(result["reasoning_efforts"], [])
+        self.assertFalse(result["reasoning_budget_supported"])
+
+    def test_always_reasoning_template_does_not_offer_disable(self):
+        template = """
+        {% if enable_thinking is defined and enable_thinking is false %}
+        {{ raise_exception('Disabling thinking is not supported.') }}
+        {% endif %}
+        {{ '<think>' }}
+        """
+        result = manager.analyze_reasoning_template(template)
+        self.assertEqual(result["reasoning_capability"], "always")
+        self.assertEqual(result["reasoning_toggle_keys"], [])
+
+    def test_abstract_level_maps_to_native_efforts(self):
+        supported = ["low", "medium", "xhigh"]
+        self.assertEqual(manager.map_native_reasoning_effort("light", supported), "low")
+        self.assertEqual(manager.map_native_reasoning_effort("balanced", supported), "medium")
+        self.assertEqual(manager.map_native_reasoning_effort("deep", supported), "xhigh")
+        self.assertEqual(manager.map_native_reasoning_effort("extreme", supported), "xhigh")
 
 class GgufCapabilityTests(unittest.TestCase):
     def test_detects_native_mtp(self):
