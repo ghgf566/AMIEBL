@@ -114,7 +114,7 @@ class CapabilityMergeTests(unittest.TestCase):
             "reasoning_toggle_keys": [],
             "reasoning_detection": "pending",
         }
-        manager.apply_detected_model_capabilities(model, detected, reset_reasoning=True)
+        manager.apply_detected_model_capabilities(model, detected, reset_for_path_change=True)
         self.assertEqual(model["context"], 8192)
         self.assertEqual(model["native_context"], 8192)
         self.assertFalse(model["mtp"])
@@ -148,7 +148,8 @@ class CapabilityMergeTests(unittest.TestCase):
             "reasoning_toggle_keys": [],
             "reasoning_detection": "pending",
         }
-        manager.apply_detected_model_capabilities(model, detected, reset_reasoning=False)
+        detected["inspection_ok"] = True
+        manager.apply_detected_model_capabilities(model, detected, reset_for_path_change=False)
         self.assertEqual(model["reasoning_capability"], "toggle")
         self.assertEqual(model["reasoning_efforts"], ["low", "medium"])
         self.assertEqual(model["reasoning_detection"], "runtime")
