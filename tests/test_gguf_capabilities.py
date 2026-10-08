@@ -5,6 +5,7 @@ import struct
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 
@@ -53,6 +54,28 @@ def write_fixture(path: Path, *, nextn_layers: int | None, nextn_tensor: bool, c
     )
     path.write_bytes(payload)
 
+
+class AtomicWriteTests(unittest.TestCase):
+    def test_atomic_text_retries_transient_replace_lock(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "config.json"
+            real_replace = manager.os.replace
+            calls = 0
+
+            def flaky_replace(source, destination):
+                nonlocal calls
+                calls += 1
+                if calls == 1:
+                    exc = PermissionError(13, "simulated transient lock", str(destination))
+                    exc.winerror = 5
+                    raise exc
+                return real_replace(source, destination)
+
+            with patch.object(manager.os, "replace", side_effect=flaky_replace):
+                manager.atomic_text(target, "ok\n")
+
+            self.assertEqual(target.read_text(encoding="utf-8"), "ok\n")
+            self.assertEqual(calls, 2)
 
 class FitOutputTests(unittest.TestCase):
     def test_parses_positive_gpu_layer_count(self):
