@@ -619,11 +619,35 @@ public partial class MainWindow : Window
                 if (target is null) throw new InvalidOperationException("此模型已被移除，請重新整理模型庫。");
                 CopyFields(target, changed, "name", "path", "context", "cpu_threads", "gpu_layers", "auto_fit", "fit_target_enabled", "fit_target_mib", "cache_type", "mtp", "mtp_source", "mtp_draft_path", "mtp_draft_max", "vision", "mmproj", "keep_loaded", "idle_minutes", "default_profile_id", "temperature", "top_p", "top_k", "min_p");
             });
-            if (modelPathChanged)
+            // Never report a silently normalized value as "applied". GGUF
+            // inspection can lower context or disable unsupported native MTP.
+            var persisted = J.A(config, "models").FirstOrDefault(x => J.S(x, "id") == id) as JsonObject
+                ?? throw new InvalidOperationException("儲存後找不到此模型，請重新整理模型庫。");
+            var normalizedLabels = new List<string>();
+            foreach (var item in new (string key, string label)[] {
+                ("path", "GGUF 路徑"), ("context", "Context"), ("cpu_threads", "CPU 執行緒"),
+                ("gpu_layers", "GPU 層數"), ("auto_fit", "GPU 自動估算"),
+                ("fit_target_enabled", "顯存預留模式"), ("fit_target_mib", "顯存預留值"),
+                ("cache_type", "KV Cache"), ("mtp", "MTP 開關"),
+                ("mtp_source", "MTP 來源"), ("mtp_draft_path", "MTP Draft 路徑"),
+                ("mtp_draft_max", "MTP Draft 上限"), ("vision", "視覺開關"),
+                ("mmproj", "視覺模型路徑"), ("keep_loaded", "保持載入"),
+                ("idle_minutes", "閒置卸載"), ("default_profile_id", "預設 Profile"),
+                ("temperature", "Temperature"), ("top_p", "Top P"),
+                ("top_k", "Top K"), ("min_p", "Min P")
+            })
+            {
+                if (!JsonNode.DeepEquals(changed[item.key], persisted[item.key]))
+                    normalizedLabels.Add(item.label);
+            }
+            if (modelPathChanged || normalizedLabels.Count > 0)
             {
                 ShowPage("模型庫");
                 SelectModel(id);
-                ShowNotice("模型路徑已儲存並重新偵測能力；請確認新的 Context、MTP 與 Reasoning 能力後再載入。");
+                if (normalizedLabels.Count > 0)
+                    ShowNotice("設定已儲存，但後端調整了：" + string.Join("、", normalizedLabels) + "。編輯器已重新讀取實際值，請確認 GGUF 能力與設定。");
+                else
+                    ShowNotice("模型路徑已儲存並重新偵測能力；請確認新的 Context、MTP 與 Reasoning 能力後再載入。");
             }
             else
             {
