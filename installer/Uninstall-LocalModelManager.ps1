@@ -82,8 +82,14 @@ if (Test-Path -LiteralPath $manifestPath) {
     # Remove empty directories only. Any user-created file keeps its folder.
     Get-ChildItem -LiteralPath $target -Directory -Recurse -ErrorAction SilentlyContinue |
         Sort-Object { $_.FullName.Length } -Descending |
-        ForEach-Object { Remove-Item -LiteralPath $_.FullName -ErrorAction SilentlyContinue }
-    Remove-Item -LiteralPath $target -ErrorAction SilentlyContinue
+        ForEach-Object {
+            if (@(Get-ChildItem -LiteralPath $_.FullName -Force -ErrorAction SilentlyContinue).Count -eq 0) {
+                Remove-Item -LiteralPath $_.FullName -ErrorAction SilentlyContinue
+            }
+        }
+    if (@(Get-ChildItem -LiteralPath $target -Force -ErrorAction SilentlyContinue).Count -eq 0) {
+        Remove-Item -LiteralPath $target -ErrorAction SilentlyContinue
+    }
 } else {
     Write-Warning '舊版安裝沒有安全的檔案清單；已解除登錄，但保留安裝資料夾，請先備份後手動清理。'
 }
