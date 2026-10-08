@@ -9,7 +9,7 @@ AMIEBL 是專為 **Windows 本地 AI 模型與 VS Code Agent** 使用情境設�
 > **設計理念：讓複雜的事情留在介面背後。**
 > 本專案不是另一套模型推理核心；模型運算仍由 llama.cpp 負責，AMIEBL 則負責部署、設定、串接與觀察。
 
-**目前版本：** 1.0.0（正式 Release 候選驗收中）
+**目前版本：** 1.0.0
 **作者：** Mr. Chen
 **平台：** Windows x64（Windows 10 2004+；建議 Windows 11）
 **桌面介面：** WinUI 3 / Windows App SDK / .NET 10
@@ -89,9 +89,9 @@ http://127.0.0.1:8080/v1/chat/completions
 
 ### 下載
 
-請查看 [GitHub Releases](https://github.com/ghgf566/AMIEBL/releases)。首次正式版本尚在準備中，Release 資產發布後才會在該頁提供下載。
+請至 [AMIEBL v1.0.0 Release](https://github.com/ghgf566/AMIEBL/releases/tag/v1.0.0) 下載正式發行檔與 `SHA256SUMS.txt`。
 
-v1.0.0 候選產物提供兩種發行方式（通過正式發布確認後上傳）：
+v1.0.0 提供兩種發行方式：
 
 | 形式 | 說明 |
 | --- | --- |
@@ -100,7 +100,7 @@ v1.0.0 候選產物提供兩種發行方式（通過正式發布確認後上傳�
 
 檔名為 `AMIEBL-v1.0.0-win-x64-portable.zip` 與 `AMIEBL-v1.0.0-win-x64-setup.exe`。
 
-**目前沒有 MSI 打包流程。** 預設發行包不附 GGUF 模型、個人設定或 API 金鑰。候選包內含 llama.cpp b11232（CPU / CUDA 12.4）、Python 3.14.7 與後端套件、.NET 10 自包含 runtime 及 Windows App SDK；不需另行安裝 Python 或 .NET，NVIDIA GPU 仍需相容驅動。首次啟動不需下載後端套件。第三方元件適用 [各自授權](THIRD-PARTY-NOTICES.md)。
+**目前沒有 MSI 打包流程。** 預設發行包不附 GGUF 模型、個人設定或 API 金鑰。正式發行包內含 llama.cpp b11232（CPU / CUDA 12.4）、Python 3.14.7 與後端套件、.NET 10 自包含 runtime 及 Windows App SDK；不需另行安裝 Python 或 .NET，NVIDIA GPU 仍需相容驅動。首次啟動不需下載後端套件。第三方元件適用 [各自授權](THIRD-PARTY-NOTICES.md)。
 
 ### 執行環境
 
