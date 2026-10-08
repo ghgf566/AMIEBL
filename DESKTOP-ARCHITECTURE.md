@@ -60,3 +60,9 @@ SmoothExpander animates the content viewport's actual layout height over 260 ms.
 Overview polling updates existing text/card visibility rather than rebuilding the page, preserving its ScrollViewer and offset. The red exit action appears only in the system-page header and retains red pointer-over/pressed resources.
 
 The isolated native regression samples intermediate action positions, task-card heights and editor scroll extents, verifies automatic reveal and unchanged overview scroll offset/page identity, and checks exit visibility on every page. Screenshot review covers the red hover state. These checks do not claim a frame-rate benchmark on every display configuration.
+
+## Native Expander appearance
+
+SmoothExpander now hosts a real WinUI Expander. It obtains the installed SDK header Style (including directional chevron and pointer/keyboard states), body brushes and padding, then applies a layout-only ControlTemplate with the named native parts. The body viewport still animates actual height; this is a customized native template, not the unmodified default template. This avoids competing native visibility/translation storyboards while retaining the native control and its automation behavior. SDK template-part changes are detected explicitly and require a compatibility update.
+
+The isolated native regression additionally checks that the SDK header Style is present, toggles the actual header to verify two-way expansion, and reverses an animation before completion without jumping its height. Screenshot review verifies visible expanded content as well as the layout measurements.

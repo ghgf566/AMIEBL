@@ -45,6 +45,13 @@ public sealed partial class MainWindow
     {
         Root.UpdateLayout();await Task.Delay(300);
         var header=ExpanderHeader(expander)??throw new InvalidOperationException("找不到展開卡片的標題。");
+        if(!expander.NativeTemplateVerified)throw new InvalidOperationException("沒有保留原生 Expander 標題樣式。");
+        header.IsChecked=true;await Task.Delay(60);double reversingHeight=expander.ContentHeight;
+        if(!expander.IsExpanded)throw new InvalidOperationException("原生標題沒有同步展開狀態。");
+        header.IsChecked=false;Root.UpdateLayout();
+        if(motionSettings.AnimationsEnabled&&Math.Abs(expander.ContentHeight-reversingHeight)>1)throw new InvalidOperationException("反向動畫重設了高度。");
+        await Task.Delay(320);Root.UpdateLayout();
+        if(expander.IsExpanded||expander.ContentHeight>0.5)throw new InvalidOperationException("原生標題沒有完成收合。");
         double y=header.TransformToVisual(Root).TransformPoint(new Windows.Foundation.Point(0,0)).Y;
         foreach(bool open in new[]{true,false,true,false})
         {
@@ -217,5 +224,3 @@ public sealed partial class MainWindow
         panel.Children.Add(Text("請求識別："+J.S(request,"id"),12));taskDetail.Content=panel;
     }
 }
-
-
