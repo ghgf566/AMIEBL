@@ -677,7 +677,7 @@ class Manager:
         try:
             output, _ = await asyncio.wait_for(asyncio.to_thread(proc.communicate), 180)
             output_text = output.decode("utf-8", errors="replace")
-            match = re.search(r"(?:^|\s)-ngl\s+(\d+)", output_text)
+            match = re.search(r"(?:^|\s)-ngl\s+(-?\d+)", output_text)
             if proc.returncode or not match:
                 detail = output_text.strip()
                 if len(detail) > 2400:
