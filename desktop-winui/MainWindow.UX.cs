@@ -40,16 +40,26 @@ public sealed partial class MainWindow
         for(int i=0;i<VisualTreeHelper.GetChildrenCount(root);i++) {var found=ExpanderHeader(VisualTreeHelper.GetChild(root,i));if(found is not null)return found;}
         return null;
     }
-    private async Task VerifyAnchoredExpander(Expander expander)
+    private FrameworkElement? modelActionRow,recentTaskCard;
+    private async Task VerifyAnchoredExpander(SmoothExpander expander)
     {
         Root.UpdateLayout();await Task.Delay(300);
         var header=ExpanderHeader(expander)??throw new InvalidOperationException("找不到展開卡片的標題。");
         double y=header.TransformToVisual(Root).TransformPoint(new Windows.Foundation.Point(0,0)).Y;
         foreach(bool open in new[]{true,false,true,false})
         {
-            expander.IsExpanded=open;Root.UpdateLayout();await Task.Delay(30);
+            bool modelPanel=ReferenceEquals(expander,modelLocations);
+            var neighbor=modelPanel?modelActionRow!:recentTaskCard!;
+            double NeighborPosition()=>modelPanel?neighbor.TransformToVisual(Root).TransformPoint(new Windows.Foundation.Point(0,0)).Y:neighbor.ActualHeight;
+            double neighborBefore=NeighborPosition();
+            double initialHeight=expander.ContentHeight;
+            expander.IsExpanded=open;Root.UpdateLayout();await Task.Delay(60);Root.UpdateLayout();
+            double neighborMiddle=NeighborPosition();
+            if(motionSettings.AnimationsEnabled&&(expander.ContentHeight<=0||!open&&expander.ContentHeight>=initialHeight||open&&expander.ContentHeight==initialHeight))throw new InvalidOperationException("版面尺寸沒有中間動畫狀態。");
             if(Math.Abs(header.TransformToVisual(Root).TransformPoint(new Windows.Foundation.Point(0,0)).Y-y)>1)throw new InvalidOperationException("展開時標題瞬移。");
-            await Task.Delay(300);
+            await Task.Delay(300);Root.UpdateLayout();
+            double neighborAfter=NeighborPosition();
+            if(motionSettings.AnimationsEnabled&&Math.Abs(neighborAfter-neighborBefore)>2&&(neighborMiddle<=Math.Min(neighborBefore,neighborAfter)+0.5||neighborMiddle>=Math.Max(neighborBefore,neighborAfter)-0.5))throw new InvalidOperationException("周圍按鈕／任務卡片沒有平滑讓位。");
             if(Math.Abs(header.TransformToVisual(Root).TransformPoint(new Windows.Foundation.Point(0,0)).Y-y)>1)throw new InvalidOperationException("收放後標題位置變動。");
         }
     }
@@ -57,6 +67,29 @@ public sealed partial class MainWindow
     {
         for(DependencyObject? parent=control;parent is not null;parent=VisualTreeHelper.GetParent(parent))if(parent is FrameworkElement element&&element.Visibility==Visibility.Collapsed)return false;
         return true;
+    }
+    private readonly List<SmoothExpander> editorExpanders=new();
+    private SmoothExpander? revealExpander;
+    private void AttachEditorReveal(SmoothExpander expander)
+    {
+        ScrollViewer? owner=null;double start=0;
+        double Target()
+        {
+            if(owner?.Content is not UIElement content)return start;
+            return Math.Max(start,expander.TransformToVisual(content).TransformPoint(new Windows.Foundation.Point(0,0)).Y-12);
+        }
+        expander.Expanding+=(_,_)=> {owner=editorScroll;start=owner?.VerticalOffset??0;revealExpander=expander;};
+        expander.ProgressChanged+=(_,_)=>
+        {
+            if(owner is null||owner!=editorScroll||revealExpander!=expander||!expander.IsExpanded)return;
+            double desired=start+(Target()-start)*expander.AnimationProgress;
+            owner.ChangeView(null,Math.Clamp(desired,0,owner.ScrollableHeight),null,true);
+        };
+        expander.AnimationCompleted+=(_,_)=>
+        {
+            if(owner is null||owner!=editorScroll||revealExpander!=expander||!expander.IsExpanded)return;
+            owner.UpdateLayout();owner.ChangeView(null,Math.Clamp(Target(),0,owner.ScrollableHeight),null,true);
+        };
     }
     private readonly Dictionary<string,Slider> sliders=new();
     private static Border Card(string title, UIElement content)
@@ -123,7 +156,7 @@ public sealed partial class MainWindow
         setting.PropertyChanged+=(_,e)=> { if(e.PropertyName==nameof(setting.Value))Sync(); };
         block.Children.Add(slider);
     }
-    private Expander? modelLocations,serviceLogExpander;
+    private SmoothExpander? modelLocations,serviceLogExpander;
     private UIElement BuildModelLocations()
     {
         var content=Panel();content.Children.Add(Text("掃描來源；更改登錄不會移動或刪除 GGUF。",12));
@@ -133,7 +166,7 @@ public sealed partial class MainWindow
             content.Children.Add(Row(Action("變更位置",async()=> { if(!await LeaveEditor())return;var replacement=await PickFolder();if(replacement is null)return;await SetModelLocation(path,replacement);ShowPage("模型庫"); }),Action("移除",async()=> { if(!await LeaveEditor())return;await SetModelLocation(path,null);ShowPage("模型庫"); })));
         }
         content.Children.Add(Action("＋ 新增模型資料夾",async()=> { if(!await LeaveEditor())return;var path=await PickFolder();if(path is null)return;await SetModelLocation(null,path);ShowPage("模型庫"); }));
-        modelLocations=new Expander { Header="模型存放位置",Content=Scroll(content),MaxHeight=340,IsExpanded=false,ExpandDirection=ExpandDirection.Up,HorizontalAlignment=HorizontalAlignment.Stretch,HorizontalContentAlignment=HorizontalAlignment.Stretch };return modelLocations;
+        modelLocations=new SmoothExpander { Header="模型存放位置",Content=Scroll(content),MaxHeight=340,IsExpanded=false,ExpandDirection=ExpandDirection.Up,HorizontalAlignment=HorizontalAlignment.Stretch,HorizontalContentAlignment=HorizontalAlignment.Stretch };return modelLocations;
     }
     private Task SetModelLocation(string? previous,string? replacement)=>vm.SaveConfig(c=>
     {
@@ -150,12 +183,12 @@ public sealed partial class MainWindow
         var root=new Grid { RowSpacing=16 };root.RowDefinitions.Add(new(){Height=new GridLength(1,GridUnitType.Star)});root.RowDefinitions.Add(new(){Height=GridLength.Auto});
         var split=new Grid { ColumnSpacing=20 };split.ColumnDefinitions.Add(new(){Width=new GridLength(260)});split.ColumnDefinitions.Add(new(){Width=new GridLength(1,GridUnitType.Star)});
         taskList=new ListView { SelectionMode=ListViewSelectionMode.Single };taskList.SelectionChanged+=(_,_)=> { if(selecting)return;selectedTask=(taskList.SelectedItem as ListViewItem)?.Tag?.ToString();UpdateTaskDetail(); };
-        var left=Card("最近任務",taskList);split.Children.Add(left);
+        var left=Card("最近任務",taskList);recentTaskCard=left;split.Children.Add(left);
         taskDetail=new ContentControl { HorizontalContentAlignment=HorizontalAlignment.Stretch };var detailScroll=Scroll(taskDetail);Grid.SetColumn(detailScroll,1);split.Children.Add(detailScroll);root.Children.Add(split);
         logBox=new TextBox { IsReadOnly=true,AcceptsReturn=true,TextWrapping=TextWrapping.NoWrap,Height=150,FontFamily=new FontFamily("Consolas") };
         var logs=Panel();logs.Children.Add(Text("預設只保留狀態與錯誤；完整請求記錄可在系統頁開啟。",12));logs.Children.Add(logBox);
         logs.Children.Add(Row(Action("複製紀錄",()=> { var data=new DataPackage();data.SetText(logBox.Text);Clipboard.SetContent(data);Message("紀錄已複製。");return Task.CompletedTask; }),Action("開啟紀錄資料夾",()=> { Process.Start(new ProcessStartInfo(host.DataDir){UseShellExecute=true});return Task.CompletedTask; }),Action("清除紀錄",async()=> { if(await Confirm("清除已完成的任務與服務紀錄？"))await api!.Post("/manager/records/clear");await Poll(); })));
-        var expander=new Expander { Header="服務執行紀錄",Content=logs,ExpandDirection=ExpandDirection.Up,HorizontalAlignment=HorizontalAlignment.Stretch,HorizontalContentAlignment=HorizontalAlignment.Stretch };serviceLogExpander=expander;Grid.SetRow(expander,1);root.Children.Add(expander);UpdateTasks();return root;
+        var expander=new SmoothExpander { Header="服務執行紀錄",Content=logs,ExpandDirection=ExpandDirection.Up,HorizontalAlignment=HorizontalAlignment.Stretch,HorizontalContentAlignment=HorizontalAlignment.Stretch };serviceLogExpander=expander;Grid.SetRow(expander,1);root.Children.Add(expander);UpdateTasks();return root;
     }
     private void UpdateTasks()
     {

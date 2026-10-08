@@ -52,3 +52,11 @@ Model library provides add/change/remove search locations, matching the WPF regi
 The clean navigation path no longer disables and restores NavigationView for every click. A dedicated composition indicator replaces the template indicator and retargets its Offset animation; Windows animation preference is respected. API reference: https://learn.microsoft.com/en-us/windows/windows-app-sdk/api/winrt/microsoft.ui.composition.implicitanimationcollection?view=windows-app-sdk-1.8
 
 The isolated native test now requires slider_sync_verified, model_locations_verified and rapid_navigation_verified. It tests 15 navigation changes at 25 ms intervals and produces the five page screenshots plus detailed performance/budget views. This validates final selection and layout, not a frame-by-frame visual smoothness benchmark on all display configurations.
+
+## Layout motion and overview polling
+
+SmoothExpander animates the content viewport's actual layout height over 260 ms. Neighboring model actions, task cards and ScrollViewer extents therefore interpolate with the content instead of changing immediately. Bottom-anchored location/log headers remain fixed. Windows reduced-motion preference is respected. Editor expanders reveal their header/content as they open; wheel/pointer interaction cancels automatic scrolling.
+
+Overview polling updates existing text/card visibility rather than rebuilding the page, preserving its ScrollViewer and offset. The red exit action appears only in the system-page header and retains red pointer-over/pressed resources.
+
+The isolated native regression samples intermediate action positions, task-card heights and editor scroll extents, verifies automatic reveal and unchanged overview scroll offset/page identity, and checks exit visibility on every page. Screenshot review covers the red hover state. These checks do not claim a frame-rate benchmark on every display configuration.

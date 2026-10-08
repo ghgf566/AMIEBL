@@ -35,7 +35,7 @@ $resultFile = Join-Path $testData $resultName
 if (-not (Test-Path -LiteralPath $resultFile)) { throw "Desktop produced no result. Test artifacts: $testData" }
 $result = Get-Content -LiteralPath $resultFile -Raw | ConvertFrom-Json
 if (-not $result.ok -or -not $result.editor_refresh_verified) { throw "$Frontend regression failed: $($result.error)" }
-if ($Frontend -eq 'WinUI' -and (-not $result.anchored_expanders_verified -or -not $result.mtp_dependency_verified -or -not $result.system_footer_verified -or -not $result.fixed_footer_verified -or -not $result.slider_sync_verified -or -not $result.model_locations_verified -or -not $result.rapid_navigation_verified)) { throw 'WinUI UX regression did not complete.' }
+if ($Frontend -eq 'WinUI' -and (-not $result.layout_animation_verified -or -not $result.overview_scroll_verified -or -not $result.editor_reveal_verified -or -not $result.exit_visibility_verified -or -not $result.anchored_expanders_verified -or -not $result.mtp_dependency_verified -or -not $result.system_footer_verified -or -not $result.fixed_footer_verified -or -not $result.slider_sync_verified -or -not $result.model_locations_verified -or -not $result.rapid_navigation_verified)) { throw 'WinUI UX regression did not complete.' }
 if ($result.model_loaded -or $result.autostart_changed) { throw 'Desktop test changed forbidden runtime state.' }
 $remaining = @(Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -and $_.CommandLine.Contains($testData) })
 if ($remaining.Count -gt 0) { throw 'Owned test processes did not stop.' }

@@ -122,7 +122,7 @@ public sealed partial class MainWindow : Window
     }
     private void ShowPage(string next)
     {
-        page=next; TitleText.Text=next; editor=null; entityList=null; entityEditor=null; editorScroll=null; editorActions=null; capabilityText=null; inputs.Clear(); vm.Editor.Discard();
+        revealExpander=null;editorExpanders.Clear();page=next; ExitButton.Visibility=next=="系統"?Visibility.Visible:Visibility.Collapsed; TitleText.Text=next; editor=null; entityList=null; entityEditor=null; editorScroll=null; editorActions=null; capabilityText=null; inputs.Clear(); vm.Editor.Discard();
         PageHost.Content=next switch { "模型庫"=>BuildEntities("models"),"使用模式"=>BuildEntities("profiles"),"系統"=>BuildSystem(),"任務與紀錄"=>BuildTasks(),_=>BuildOverview() };
         RestoreNavigation(); UpdateNavigationIndicator(); UpdateFooter();
     }
@@ -136,19 +136,30 @@ public sealed partial class MainWindow : Window
         return button;
     }
     private static StackPanel Row(params UIElement[] controls) { var row=new StackPanel { Orientation=Orientation.Horizontal, Spacing=8 }; foreach (var control in controls) row.Children.Add(control); return row; }
+    private ScrollViewer? overviewScroll;
+    private TextBlock? overviewModel,overviewState,overviewQueue,overviewMemory,overviewConnection,overviewError;
+    private Border? overviewErrorCard;
     private UIElement BuildOverview()
     {
-        var panel=Panel();
-        var state=Panel();state.Children.Add(Text("模型："+J.S(vm.Status,"model_name","尚未載入"),20));state.Children.Add(Text("狀態："+Phase(J.S(vm.Status,"state","unloaded"))+" · "+vm.ApplicationState));
+        var panel=Panel();var state=Panel();
+        overviewModel=Text("",20);overviewState=Text("");state.Children.Add(overviewModel);state.Children.Add(overviewState);
         state.Children.Add(Text("收到推理請求後，管理器會載入指定模型。",12));
-        state.Children.Add(Row(Action("同步至 VS Code",ConnectVSCode),Action("載入預設模型",LoadDefault),Action("卸載模型",Unload)));
-        panel.Children.Add(Card("模型與服務",state));
+        state.Children.Add(Row(Action("同步至 VS Code",ConnectVSCode),Action("載入預設模型",LoadDefault),Action("卸載模型",Unload)));panel.Children.Add(Card("模型與服務",state));
         var metrics=new Grid { ColumnSpacing=16 };metrics.ColumnDefinitions.Add(new(){Width=new GridLength(1,GridUnitType.Star)});metrics.ColumnDefinitions.Add(new(){Width=new GridLength(1,GridUnitType.Star)});
-        metrics.Children.Add(Card("任務佇列",Text("執行中："+J.I(vm.Status,"active_count")+"\n等待中："+J.I(vm.Status,"queued_count"),18)));
-        var resource=vm.Status["resources"];var memory=Card("記憶體用量",Text("RAM："+J.Metric(resource,"ram_used_gb"," GB")+" / "+J.Metric(resource,"ram_total_gb"," GB")+"\nGPU："+J.Metric(resource,"gpu_used_mib"," MiB")+" / "+J.Metric(resource,"gpu_total_mib"," MiB")));Grid.SetColumn(memory,1);metrics.Children.Add(memory);panel.Children.Add(metrics);
+        overviewQueue=Text("",18);overviewMemory=Text("");metrics.Children.Add(Card("任務佇列",overviewQueue));var memory=Card("記憶體用量",overviewMemory);Grid.SetColumn(memory,1);metrics.Children.Add(memory);panel.Children.Add(metrics);
         panel.Children.Add(Card("服務控制",Row(Action("暫停／恢復接收",ToggleAccepting),Action("保持載入／恢復卸載",ToggleKeep))));
-        var connection=Panel();connection.Children.Add(Text("API："+J.S(vm.Status,"api_url")+"\n引擎版本："+J.S(vm.Status,"engine_version","未取得")));connection.Children.Add(Text("同步模型清單、模式名稱與 Agent 設定，並備份現有內容。",12));panel.Children.Add(Card("VS Code 整合",connection));
-        if(!string.IsNullOrEmpty(J.S(vm.Status,"last_error")))panel.Children.Add(Card("最近錯誤",Text(J.S(vm.Status,"last_error"))));return Scroll(panel);
+        var connection=Panel();overviewConnection=Text("");connection.Children.Add(overviewConnection);connection.Children.Add(Text("同步模型清單、模式名稱與 Agent 設定，並備份現有內容。",12));panel.Children.Add(Card("VS Code 整合",connection));
+        overviewError=Text("");overviewErrorCard=Card("最近錯誤",overviewError);panel.Children.Add(overviewErrorCard);
+        UpdateOverview();overviewScroll=Scroll(panel);return overviewScroll;
+    }
+    private void UpdateOverview()
+    {
+        if(overviewModel is null)return;
+        overviewModel.Text="模型："+J.S(vm.Status,"model_name","尚未載入");overviewState!.Text="狀態："+Phase(J.S(vm.Status,"state","unloaded"))+" · "+vm.ApplicationState;
+        overviewQueue!.Text="執行中："+J.I(vm.Status,"active_count")+"\n等待中："+J.I(vm.Status,"queued_count");
+        var resource=vm.Status["resources"];overviewMemory!.Text="RAM："+J.Metric(resource,"ram_used_gb"," GB")+" / "+J.Metric(resource,"ram_total_gb"," GB")+"\nGPU："+J.Metric(resource,"gpu_used_mib"," MiB")+" / "+J.Metric(resource,"gpu_total_mib"," MiB");
+        overviewConnection!.Text="API："+J.S(vm.Status,"api_url")+"\n引擎版本："+J.S(vm.Status,"engine_version","未取得");
+        overviewError!.Text=J.S(vm.Status,"last_error");overviewErrorCard!.Visibility=string.IsNullOrEmpty(overviewError.Text)?Visibility.Collapsed:Visibility.Visible;
     }
     private async Task Poll()
     {
@@ -160,7 +171,7 @@ public sealed partial class MainWindow : Window
             vm.Status=results[0]; requests=J.A(results[1],"requests");
             if(page=="任務與紀錄")serviceLogs=string.Join("\n",J.A(await api.Get("/manager/logs"),"lines").Select(x=>x?.ToString()));
             tray?.Update("AMIEBL · "+J.S(vm.Status,"state")); UpdateFooter();
-            if (!working && page=="總覽") PageHost.Content=BuildOverview();
+            if (!working && page=="總覽") UpdateOverview();
             if (!working && page=="任務與紀錄") UpdateTasks();
             if (!working && !vm.IsBusy)
             {
@@ -216,6 +227,10 @@ public sealed partial class MainWindow : Window
             await SetModelLocation(Path.Combine(host.DataDir,"folder-regression"),Path.Combine(host.DataDir,"folder-replaced"));
             await SetModelLocation(Path.Combine(host.DataDir,"folder-replaced"),null);
             if(J.A(vm.Config,"model_dirs").Any(x=>x?.ToString()?.Contains("folder-")==true))throw new InvalidOperationException("模型位置變更／移除失敗。");
+            ShowPage("總覽");Root.UpdateLayout();await Task.Delay(50);var overviewContent=PageHost.Content;
+            overviewScroll!.ChangeView(null,Math.Min(30,overviewScroll.ScrollableHeight),null,true);await Task.Delay(30);double overviewOffset=overviewScroll.VerticalOffset;
+            await Poll();Root.UpdateLayout();await Task.Delay(30);
+            if(!ReferenceEquals(overviewContent,PageHost.Content)||Math.Abs(overviewScroll.VerticalOffset-overviewOffset)>1)throw new InvalidOperationException("總覽輪詢重設了捲動位置。");
             for(int i=0;i<15;i++) { Navigation.SelectedItem=Navigation.MenuItems[i%5];await Task.Delay(25); }
             if(page!="系統"||working||!Navigation.IsEnabled)throw new InvalidOperationException("快速切頁狀態不一致。");
             requests=new JsonArray(new JsonObject { ["id"]="ux-fixture",["phase"]="completed",["model_name"]="回歸測試模型",["profile_name"]="程式設計",["elapsed_seconds"]=2.5,["prompt_tokens"]=128,["generated_tokens"]=64,["generation_tps"]=25.6,["decision"]="on",["effort"]="medium",["thinking_budget"]=64 });
@@ -229,6 +244,21 @@ public sealed partial class MainWindow : Window
                 if(next=="模型位置展開")modelLocations!.IsExpanded=true;
                 if(next=="服務紀錄展開")serviceLogExpander!.IsExpanded=true;
                 if(next=="系統") {await CheckConnection();Root.UpdateLayout();await Task.Delay(50);}
+                if(ExitButton.Visibility!=(page=="系統"?Visibility.Visible:Visibility.Collapsed))throw new InvalidOperationException("完全結束出現在錯誤頁面。");
+                if(next is "模型庫效能" or "思考預算")
+                {
+                    var fold=editorExpanders.Single();editorScroll!.ChangeView(null,Math.Max(0,editorScroll.ScrollableHeight-60),null,true);Root.UpdateLayout();await Task.Delay(40);
+                    fold.IsExpanded=true;await Task.Delay(70);Root.UpdateLayout();
+                    if(motionSettings.AnimationsEnabled&&fold.ContentHeight<=0)throw new InvalidOperationException("編輯卡片缺少中間動畫狀態。");
+                    await Task.Delay(300);Root.UpdateLayout();
+                    double relativeY=fold.TransformToVisual(editorScroll).TransformPoint(new Windows.Foundation.Point(0,0)).Y;
+                    if(relativeY< -20||relativeY>editorScroll.ActualHeight-60)throw new InvalidOperationException("展開後沒有帶到設定內容。");
+                    double expandedExtent=editorScroll.ExtentHeight;
+                    fold.IsExpanded=false;await Task.Delay(70);Root.UpdateLayout();double middleExtent=editorScroll.ExtentHeight;
+                    await Task.Delay(280);Root.UpdateLayout();
+                    if(motionSettings.AnimationsEnabled&&expandedExtent-editorScroll.ExtentHeight>2&&(middleExtent>=expandedExtent-0.5||middleExtent<=editorScroll.ExtentHeight+0.5))throw new InvalidOperationException("收合時捲動範圍瞬間改變。");
+                }
+                if(next=="系統") {if(!VisualStateManager.GoToState(ExitButton,"PointerOver",false))throw new InvalidOperationException("完全結束的 hover 狀態不存在。");}
                 double? footerY=editorActions?.TransformToVisual(Root).TransformPoint(new Windows.Foundation.Point(0,0)).Y;
                 if(next is "模型庫效能" or "思考預算" or "系統" && editorScroll is ScrollViewer editScroll)editScroll.ChangeView(null,next=="模型庫效能"?600:next=="系統"?100000:460,null);
                 UpdateNavigationIndicator();await Task.Delay(350);
@@ -241,7 +271,7 @@ public sealed partial class MainWindow : Window
                 await reader.LoadAsync((uint)stream.Size);var bytes=new byte[(int)stream.Size];reader.ReadBytes(bytes);await File.WriteAllBytesAsync(Path.Combine(screenshotDir,next+".png"),bytes);
                 pages.Add(new JsonObject { ["page"]=next,["rendered"]=true,["width"]=bitmap.PixelWidth,["height"]=bitmap.PixelHeight });
             }
-            await File.WriteAllTextAsync(Path.Combine(host.DataDir,"winui-smoke-test.json"),new JsonObject { ["ok"]=true,["editor_refresh_verified"]=true,["anchored_expanders_verified"]=true,["mtp_dependency_verified"]=true,["system_footer_verified"]=true,["fixed_footer_verified"]=true,["slider_sync_verified"]=true,["model_locations_verified"]=true,["rapid_navigation_verified"]=true,["pages"]=pages,["model_loaded"]=J.S(vm.Status,"state")!="unloaded",["autostart_changed"]=false }.ToJsonString(new JsonSerializerOptions {WriteIndented=true}));
+            await File.WriteAllTextAsync(Path.Combine(host.DataDir,"winui-smoke-test.json"),new JsonObject { ["ok"]=true,["editor_refresh_verified"]=true,["layout_animation_verified"]=true,["overview_scroll_verified"]=true,["editor_reveal_verified"]=true,["exit_visibility_verified"]=true,["anchored_expanders_verified"]=true,["mtp_dependency_verified"]=true,["system_footer_verified"]=true,["fixed_footer_verified"]=true,["slider_sync_verified"]=true,["model_locations_verified"]=true,["rapid_navigation_verified"]=true,["pages"]=pages,["model_loaded"]=J.S(vm.Status,"state")!="unloaded",["autostart_changed"]=false }.ToJsonString(new JsonSerializerOptions {WriteIndented=true}));
         }
         finally {vm.Config=await api!.Put("/manager/config",original);vm.Editor.Discard();}
     }

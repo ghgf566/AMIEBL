@@ -48,7 +48,7 @@ public sealed partial class MainWindow
             });
         };
         if (collection=="models") {
-            var actions=Row(Action("加入 GGUF",AddModel),Action("掃描",ScanModels));Grid.SetRow(actions,2);left.Children.Add(actions);
+            var actions=Row(Action("加入 GGUF",AddModel),Action("掃描",ScanModels));modelActionRow=actions;Grid.SetRow(actions,2);left.Children.Add(actions);
             var locations=BuildModelLocations();Grid.SetRow((FrameworkElement)locations,3);left.Children.Add(locations);
         }
         else {var actions=Row(Action("新增",AddProfile),Action("複製",DuplicateProfile));Grid.SetRow(actions,2);left.Children.Add(actions);}
@@ -95,14 +95,18 @@ public sealed partial class MainWindow
     }
     private UIElement BuildForm(SettingsEditorViewModel draft)
     {
-        inputs.Clear(); sliders.Clear(); var panel=Panel();
+        inputs.Clear(); sliders.Clear(); editorExpanders.Clear(); var panel=Panel();
         if(draft.Collection=="system") {panel.Children.Add(Action("檢查連線",CheckConnection));panel.Children.Add(Text("資料位置："+host.DataDir,12));}
         var sections=new Dictionary<string,StackPanel>();
         StackPanel Section(string title)
         {
             if(sections.TryGetValue(title,out var existing))return existing;
             var content=Panel(); sections[title]=content;
-            if(title is "進階採樣" or "VS Code Agent") panel.Children.Add(new Expander { Header=title,Content=content,HorizontalAlignment=HorizontalAlignment.Stretch,HorizontalContentAlignment=HorizontalAlignment.Stretch });
+            if(title is "進階採樣" or "VS Code Agent")
+            {
+                var expander=new SmoothExpander { Header=title,Content=content,HorizontalAlignment=HorizontalAlignment.Stretch,HorizontalContentAlignment=HorizontalAlignment.Stretch };
+                AttachEditorReveal(expander);panel.Children.Add(expander);editorExpanders.Add(expander);
+            }
             else panel.Children.Add(Card(title,content));
             return content;
         }
@@ -161,7 +165,10 @@ public sealed partial class MainWindow
         else if (draft.Collection=="profiles") panel.Children.Add(Action("刪除此模式",DeleteEntity));
         if(draft.Collection=="system")panel.Children.Add(Card("設定備份與還原",Row(Action("匯出設定",Export),Action("匯入設定",Import))));
         var layout=new Grid { RowSpacing=12 };layout.RowDefinitions.Add(new(){Height=new GridLength(1,GridUnitType.Star)});layout.RowDefinitions.Add(new(){Height=GridLength.Auto});
-        editorScroll=Scroll(panel);layout.Children.Add(editorScroll);
+        editorScroll=Scroll(panel);
+        editorScroll.PointerWheelChanged+=(_,_)=>revealExpander=null;
+        editorScroll.PointerPressed+=(_,_)=>revealExpander=null;
+        layout.Children.Add(editorScroll);
         editorActions=saveActions;Grid.SetRow(saveActions,1);layout.Children.Add(saveActions);return layout;
     }
     private string ModelCapability(string id)
