@@ -44,7 +44,7 @@ try {
 $backendTarget = Join-Path $destination 'backend'
 New-Item -ItemType Directory -Force -Path $backendTarget | Out-Null
 Get-ChildItem -LiteralPath (Join-Path $PSScriptRoot 'backend') -File | Where-Object { $_.Extension -in '.py','.txt','.json' } | ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination $backendTarget -Force }
-foreach ($document in @('使用說明.md','驗證紀錄.md')) {
+foreach ($document in @('README.md','LICENSE','SECURITY.md','使用說明.md','驗證紀錄.md')) {
     $documentPath = Join-Path $PSScriptRoot $document
     if (Test-Path -LiteralPath $documentPath) { Copy-Item -LiteralPath $documentPath -Destination $destination -Force }
 }
