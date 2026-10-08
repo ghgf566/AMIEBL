@@ -192,8 +192,10 @@ public partial class MainWindow : Window
     private async Task SaveConfig(Action<JsonObject> edit)
     {
         if (api is null) return;
-        JsonObject latest = await api.Get("/manager/config"); edit(latest); await api.Put("/manager/config", latest); config = await api.Get("/manager/config"); dirty = false;
-        ShowNotice("設定已儲存。模型載入參數會在下次載入生效。"); await Poll();
+        JsonObject latest = await api.Get("/manager/config"); edit(latest); await api.Put("/manager/config", latest);
+        var refreshed = await Task.WhenAll(api.Get("/manager/config"), api.Get("/manager/status"));
+        config = refreshed[0]; status = refreshed[1]; dirty = false;
+        ShowNotice("設定已儲存。"); await Poll();
     }
     private static JsonObject Clone(JsonNode node) => node.DeepClone().AsObject();
     private static void CopyFields(JsonObject target, JsonObject source, params string[] keys)
@@ -428,7 +430,7 @@ public partial class MainWindow : Window
     }
     private UIElement BuildModelEditor(JsonObject model)
     {
-        string id = J.S(model, "id"); var panel = Section("模型設定", "載入參數在下次載入生效；每個模型各自保存。");
+        string id = J.S(model, "id"); var panel = Section("模型設定", "Context、GPU、KV、CPU、MTP 與視覺等引擎參數需重新載入；閒置策略、預設使用模式與採樣參數會直接套用到後續請求。每個模型各自保存。");
         var name = Field(panel, "顯示名稱", J.S(model, "name")); Field(panel, "API 模型識別（建立後固定）", id, true);
         string originalPath = J.S(model, "path");
         var path = Field(panel, "模型 GGUF 路徑", originalPath); panel.Children.Add(Button("選擇模型檔案", () => { PickFile(path, "GGUF 模型|*.gguf"); return Task.CompletedTask; }));
@@ -502,11 +504,20 @@ public partial class MainWindow : Window
             ("q8_0", "q8_0 · 均衡"), ("q5_0", "q5_0"), ("q5_1", "q5_1"), ("q4_0", "q4_0 · 較省記憶體"),
             ("q4_1", "q4_1"), ("iq4_nl", "iq4_nl · 低記憶體"));
         int logicalThreads = Math.Max(1, Environment.ProcessorCount);
-        int savedThreads = Math.Clamp(J.I(model, "cpu_threads", 0), 0, logicalThreads);
-        var cpuPanel = Section("CPU 執行緒上限", "0 代表 Auto；指定數值時，生成與批次／上下文處理都會套用相同的執行緒上限。");
+        int savedThreads = Math.Clamp(J.I(model, "cpu_threads", 0), 0, 4096);
+        int cpuSliderMax = Math.Max(logicalThreads, savedThreads);
+        var cpuPanel = Section("CPU 執行緒上限", "0 代表 Auto；指定數值時，生成與批次／上下文處理都會套用相同的執行緒上限。已匯入的較高值會保留，不會因為只開啟設定頁就被靜默改小。");
         var cpuValue = Text("", 12, true);
-        var cpuSlider = new Slider { Minimum = 0, Maximum = logicalThreads, Value = savedThreads, TickFrequency = 1, IsSnapToTickEnabled = true, TickPlacement = System.Windows.Controls.Primitives.TickPlacement.BottomRight, SmallChange = 1, LargeChange = Math.Max(1, logicalThreads / 4), Margin = new Thickness(0, 0, 0, 4) };
-        void RefreshCpuLabel() => cpuValue.Text = cpuSlider.Value < 0.5 ? $"Auto（llama.cpp 自動決定，系統可用 {logicalThreads} 個邏輯執行緒）" : $"最多 {(int)Math.Round(cpuSlider.Value)} 個 CPU 執行緒";
+        var cpuSlider = new Slider { Minimum = 0, Maximum = cpuSliderMax, Value = savedThreads, TickFrequency = 1, IsSnapToTickEnabled = true, TickPlacement = System.Windows.Controls.Primitives.TickPlacement.BottomRight, SmallChange = 1, LargeChange = Math.Max(1, logicalThreads / 4), Margin = new Thickness(0, 0, 0, 4) };
+        void RefreshCpuLabel()
+        {
+            int selected = (int)Math.Round(cpuSlider.Value);
+            cpuValue.Text = selected <= 0
+                ? $"Auto（llama.cpp 自動決定，系統目前可用 {logicalThreads} 個邏輯執行緒）"
+                : selected > logicalThreads
+                    ? $"最多 {selected} 個 CPU 執行緒（高於目前系統的 {logicalThreads}；實際可用量仍受系統限制）"
+                    : $"最多 {selected} 個 CPU 執行緒";
+        }
         cpuSlider.ValueChanged += (_, _) => { RefreshCpuLabel(); dirty = true; };
         RefreshCpuLabel();
         cpuPanel.Children.Add(cpuSlider); cpuPanel.Children.Add(cpuValue); panel.Children.Add(cpuPanel);
@@ -573,7 +584,7 @@ public partial class MainWindow : Window
         reasoningInfo.Children.Add(Text(detectedEfforts.Length > 0 ? "原生 Effort：" + string.Join(" / ", detectedEfforts) : "原生 Effort：無", 11, true));
         string defaultEffort = J.S(model, "reasoning_default_effort");
         if (!string.IsNullOrWhiteSpace(defaultEffort)) reasoningInfo.Children.Add(Text("模型預設 Effort：" + defaultEffort, 11, true));
-        reasoningInfo.Children.Add(Text(J.B(model, "reasoning_budget_supported") ? "✓ 可使用 reasoning token budget" : "— 未偵測到可用的 reasoning token budget 標記", 11, true));
+        reasoningInfo.Children.Add(Text(J.B(model, "reasoning_budget_supported") ? "✓ 已偵測到 reasoning span，可使用自動 Token Budget fallback" : "— 未確認自動 Budget 能力；Profile 的「自訂硬上限」仍會 best-effort 傳給 llama.cpp", 11, true));
         string toggleKeys = string.Join(", ", J.A(model, "reasoning_toggle_keys").Select(x => x?.ToString()).Where(x => !string.IsNullOrWhiteSpace(x)));
         if (!string.IsNullOrWhiteSpace(toggleKeys)) reasoningInfo.Children.Add(Text("Template 控制：" + toggleKeys, 11, true));
         string reasoningSource = J.S(model, "reasoning_detection", "pending");
@@ -586,7 +597,7 @@ public partial class MainWindow : Window
             string newPath = Required(path, "模型路徑");
             bool modelPathChanged = !string.Equals(newPath, originalPath, StringComparison.OrdinalIgnoreCase);
             changed["name"] = Required(name, "模型名稱"); changed["path"] = newPath;
-            changed["context"] = Number(context, "上下文容量", 512, modelPathChanged ? 2_097_152 : (nativeContext > 0 ? nativeContext : 2_097_152)); changed["cpu_threads"] = (int)Math.Round(cpuSlider.Value); changed["gpu_layers"] = autoFit.IsChecked == true ? J.I(model, "gpu_layers", -1) : Number(gpu, "GPU 層數", -1, 999); changed["auto_fit"] = autoFit.IsChecked == true; changed["fit_target_enabled"] = customReserve.IsChecked == true; changed["fit_target_mib"] = Number(reserve, "預留顯示記憶體"); changed["cache_type"] = Value(cache); string selectedMtpSource = (mtpSource.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "external"; changed["mtp"] = mtp.IsChecked == true; changed["mtp_source"] = selectedMtpSource; changed["mtp_draft_path"] = mtpDraftPath.Text.Trim(); changed["mtp_draft_max"] = mtp.IsChecked == true && OptionalNumber(mtpDraftMax, "MTP 最大猜測 Token", 1, 64) is int draftVal ? JsonValue.Create(draftVal) : null; if (mtp.IsChecked == true && selectedMtpSource == "native" && !nativeMtpAvailable && !modelPathChanged) throw new InvalidOperationException("此 GGUF 沒有可用的內建 MTP / NextN，請改用外部 MTP Draft。"); if (mtp.IsChecked == true && selectedMtpSource == "external" && string.IsNullOrWhiteSpace(mtpDraftPath.Text)) throw new InvalidOperationException("請指定外部 MTP Draft GGUF。"); changed["vision"] = vision.IsChecked == true; changed["mmproj"] = projector.Text.Trim(); changed["keep_loaded"] = keep.IsChecked == true; changed["idle_minutes"] = string.IsNullOrWhiteSpace(idle.Text) ? null : JsonValue.Create(Number(idle, "閒置卸載分鐘", 0)); changed["default_profile_id"] = Value(profile); changed["temperature"] = OptionalDecimal(temperature, "Temperature", 0, 5) is double tempVal ? JsonValue.Create(tempVal) : null; changed["top_p"] = OptionalDecimal(topP, "Top P", 0, 1) is double topPVal ? JsonValue.Create(topPVal) : null; changed["top_k"] = OptionalNumber(topK, "Top K", 0, 100000) is int topKVal ? JsonValue.Create(topKVal) : null; changed["min_p"] = OptionalDecimal(minP, "Min P", 0, 1) is double minPVal ? JsonValue.Create(minPVal) : null;
+            changed["context"] = Number(context, "上下文容量", 512, modelPathChanged ? 2_097_152 : (nativeContext > 0 ? nativeContext : 2_097_152)); changed["cpu_threads"] = (int)Math.Round(cpuSlider.Value); changed["gpu_layers"] = autoFit.IsChecked == true ? J.I(model, "gpu_layers", -1) : Number(gpu, "GPU 層數", -1, 999); changed["auto_fit"] = autoFit.IsChecked == true; changed["fit_target_enabled"] = customReserve.IsChecked == true; changed["fit_target_mib"] = Number(reserve, "預留顯示記憶體", 0, 1_048_576); changed["cache_type"] = Value(cache); string selectedMtpSource = (mtpSource.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "external"; changed["mtp"] = mtp.IsChecked == true; changed["mtp_source"] = selectedMtpSource; changed["mtp_draft_path"] = mtpDraftPath.Text.Trim(); changed["mtp_draft_max"] = OptionalNumber(mtpDraftMax, "MTP 最大猜測 Token", 1, 64) is int draftVal ? JsonValue.Create(draftVal) : null; if (mtp.IsChecked == true && selectedMtpSource == "native" && !nativeMtpAvailable && !modelPathChanged) throw new InvalidOperationException("此 GGUF 沒有可用的內建 MTP / NextN，請改用外部 MTP Draft。"); if (mtp.IsChecked == true && selectedMtpSource == "external" && string.IsNullOrWhiteSpace(mtpDraftPath.Text)) throw new InvalidOperationException("請指定外部 MTP Draft GGUF。"); changed["vision"] = vision.IsChecked == true; changed["mmproj"] = projector.Text.Trim(); changed["keep_loaded"] = keep.IsChecked == true; changed["idle_minutes"] = string.IsNullOrWhiteSpace(idle.Text) ? null : JsonValue.Create(Number(idle, "閒置卸載分鐘", 0, 10080)); changed["default_profile_id"] = Value(profile); changed["temperature"] = OptionalDecimal(temperature, "Temperature", 0, 5) is double tempVal ? JsonValue.Create(tempVal) : null; changed["top_p"] = OptionalDecimal(topP, "Top P", 0, 1) is double topPVal ? JsonValue.Create(topPVal) : null; changed["top_k"] = OptionalNumber(topK, "Top K", 0, 100000) is int topKVal ? JsonValue.Create(topKVal) : null; changed["min_p"] = OptionalDecimal(minP, "Min P", 0, 1) is double minPVal ? JsonValue.Create(minPVal) : null;
             await SaveConfig(c =>
             {
                 var models = J.A(c, "models");
