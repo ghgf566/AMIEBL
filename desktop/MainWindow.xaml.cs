@@ -38,6 +38,7 @@ public partial class MainWindow : Window
     private string? selectedTask;
     private Func<Task>? pendingSave;
     private int failedPolls;
+    private string? lastReadyPid;
     private static readonly string[] Pages = ["總覽", "模型庫", "使用模式", "任務與紀錄", "系統"];
     private static readonly string[] Glyphs = ["◈", "▦", "≋", "↗", "⚙"];
     private static Brush Paint(string hex) => new SolidColorBrush((Color)ColorConverter.ConvertFromString(hex));
@@ -113,6 +114,18 @@ public partial class MainWindow : Window
         {
             var fetched = await Task.WhenAll(api.Get("/manager/status"), api.Get("/manager/requests"));
             status = fetched[0]; requests = J.A(fetched[1], "requests"); failedPolls = 0;
+            string readyPid = J.S(status, "state") == "ready" ? J.S(status, "pid") : "";
+            if (!string.IsNullOrWhiteSpace(readyPid) && readyPid != lastReadyPid)
+            {
+                lastReadyPid = readyPid;
+                config = await api.Get("/manager/config");
+                if (currentPage == "模型庫" && !dirty)
+                {
+                    string selectedModel = J.S(status, "model_id", DefaultModel());
+                    ShowPage("模型庫");
+                    SelectModel(selectedModel);
+                }
+            }
             SidebarStatus.Text = "●  服務已連線";
             if (logsText is not null) { var result = await api.Get("/manager/logs"); logsText.Text = string.Join(Environment.NewLine, J.A(result, "lines").Select(x => x?.ToString())); }
             UpdateLive();
@@ -405,7 +418,13 @@ public partial class MainWindow : Window
         }));
         left.Children.Add(Text("移除模型或資料夾只會取消登錄，不會刪除磁碟檔案。", 11, true));
         if (list.Items.Count > 0) list.SelectedIndex = 0; else editor.Content = Text("新增模型資料夾並掃描，或直接選擇 GGUF 檔案。", 18);
+        grid.Tag = list;
         return grid;
+    }
+    private void SelectModel(string id)
+    {
+        if (PageContent.Content is Grid grid && grid.Tag is ListBox list)
+            list.SelectedItem = list.Items.Cast<ListBoxItem>().FirstOrDefault(x => J.S(x.Tag as JsonObject, "id") == id);
     }
     private UIElement BuildModelEditor(JsonObject model)
     {
@@ -570,9 +589,18 @@ public partial class MainWindow : Window
                 if (target is null) throw new InvalidOperationException("此模型已被移除，請重新整理模型庫。");
                 CopyFields(target, changed, "name", "path", "context", "cpu_threads", "gpu_layers", "auto_fit", "fit_target_enabled", "fit_target_mib", "cache_type", "mtp", "mtp_source", "mtp_draft_path", "mtp_draft_max", "vision", "mmproj", "keep_loaded", "idle_minutes", "default_profile_id", "temperature", "top_p", "top_k", "min_p");
             });
-            ShowNotice(J.S(status, "model_id") == id && J.B(status, "pending_config")
-                ? "模型設定已儲存。此模型目前仍以舊的載入參數執行；按「載入此模型」即可重新載入並套用。"
-                : "模型設定已儲存。");
+            if (modelPathChanged)
+            {
+                ShowPage("模型庫");
+                SelectModel(id);
+                ShowNotice("模型路徑已儲存並重新偵測能力；請確認新的 Context、MTP 與 Reasoning 能力後再載入。");
+            }
+            else
+            {
+                ShowNotice(J.S(status, "model_id") == id && J.B(status, "pending_config")
+                    ? "模型設定已儲存。此模型目前仍以舊的載入參數執行；下一個推理請求會先重新載入，或可按「載入此模型」立即套用。"
+                    : "模型設定已儲存。");
+            }
         }
         pendingSave = Save;
         panel.Children.Add(ActionRow(Button("儲存模型設定", Save, true), Button("設為預設模型", async () => { await Save(); await SaveConfig(c => c["default_model_id"] = id); ShowNotice("已設為預設模型。"); }), Button("載入此模型", async () => { await Save(); await api!.Post("/manager/load", new JsonObject { ["model_id"] = id }); ShowNotice("已要求載入模型。"); await Poll(); })));
