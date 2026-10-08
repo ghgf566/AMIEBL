@@ -533,10 +533,12 @@ def inspect_gguf_capabilities(path_value: str, _include_split_shards: bool = Tru
             result["native_context"] = native_context
             result["mtp_layers"] = nextn_layers
             result["mtp_tensor_count"] = nextn_tensors
-            if not chat_template and named_chat_templates:
-                # Named templates are only a fallback. A named tool/reasoning
-                # template must never override the GGUF's explicit default.
-                chat_template = max(named_chat_templates, key=len)
+            if not chat_template and len(named_chat_templates) == 1:
+                # A single named template is a safe fallback. Multiple named
+                # templates without an explicit default are ambiguous; leave
+                # capability unknown until llama.cpp /props resolves the one
+                # actually in use.
+                chat_template = named_chat_templates[0]
             reasoning = analyze_reasoning_template(chat_template)
             result.update(reasoning)
             if chat_template:
