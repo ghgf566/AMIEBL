@@ -106,6 +106,25 @@ def main():
         draft(client)
         verify_tag(client)
         available = assets(client)
+        if os.environ.get("RELAY_PREFLIGHT") == "1":
+            name = "amiebl-v1-relay-preflight.txt"
+            body = b"AMIEBL relay preflight\n"
+            sha = hashlib.sha256(body).hexdigest()
+            existing = available.get(name)
+            if existing:
+                if not matches(existing, len(body), sha):
+                    raise RuntimeError("Unexpected preflight attachment")
+                api(client, "DELETE", f"/releases/assets/{existing['id']}")
+            upload = draft(client)["upload_url"].split("{", 1)[0]
+            if upload != f"https://uploads.github.com/repos/ghgf566/AMIEBL/releases/{RELEASE_ID}/assets":
+                raise RuntimeError("Unexpected preflight endpoint")
+            response = client.post(upload + "?name=" + quote(name), content=body,
+                                   headers={"Content-Type": "application/octet-stream"})
+            if response.status_code != 201 or not matches(response.json(), len(body), sha):
+                raise RuntimeError("Preflight upload did not verify")
+            api(client, "DELETE", f"/releases/assets/{response.json()['id']}")
+            print("PREFLIGHT PASS: draft access, exact tag, verified upload and own-asset deletion", flush=True)
+            return
         marker = available.get(MANIFEST)
         if not marker or marker["size"] > 128 * 1024:
             raise RuntimeError("Missing or oversized completion manifest")
