@@ -219,8 +219,10 @@ def validate_config(value: Any) -> dict:
         p.setdefault("thinking_budget", 1536)
         number(p.get("max_tokens"), "總生成上限", 1, 1048576, True)
         number(p.get("thinking_budget"), "思考預算", 0, 1048576, True)
-        if p["budget_mode"] == "custom" and p["thinking_budget"] >= p["max_tokens"] and p["thinking_mode"] != "off":
-            raise ValueError("自訂思考預算必須小於總生成上限，為回答保留空間。")
+        if p["budget_mode"] == "custom" and p["thinking_mode"] in ("auto", "on"):
+            reserve = min(256, max(1, p["max_tokens"] // 4))
+            if p["thinking_budget"] > p["max_tokens"] - reserve:
+                raise ValueError(f"自訂思考預算過高；總生成上限 {p['max_tokens']} 至少需保留 {reserve} tokens 給回答與工具呼叫。")
         if p.get("agent_sync_mode") not in ("preserve", "managed"):
             raise ValueError("無效的 VS Code Agent 同步方式。")
         if not isinstance(p.get("agent_name"), str) or not p["agent_name"].strip():
