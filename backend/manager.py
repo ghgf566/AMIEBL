@@ -406,6 +406,10 @@ def inspect_gguf_capabilities(path_value: str) -> dict:
         pass
     return result
 
+def parse_fit_gpu_layers(output_text: str) -> int | None:
+    match = re.search(r"(?:^|\s)-ngl\s+(-?\d+)", output_text)
+    return int(match.group(1)) if match else None
+
 def free_port(port: int) -> bool:
     with socket.socket() as s:
         if os.name == "nt":
@@ -677,14 +681,14 @@ class Manager:
         try:
             output, _ = await asyncio.wait_for(asyncio.to_thread(proc.communicate), 180)
             output_text = output.decode("utf-8", errors="replace")
-            match = re.search(r"(?:^|\s)-ngl\s+(-?\d+)", output_text)
-            if proc.returncode or not match:
+            fitted_layers = parse_fit_gpu_layers(output_text)
+            if proc.returncode or fitted_layers is None:
                 detail = output_text.strip()
                 if len(detail) > 2400:
                     detail = detail[-2400:]
                 suffix = f"\nllama-fit-params 輸出：\n{detail}" if detail else "\n工具沒有輸出可用的診斷訊息。"
                 raise ValueError(f"GPU 分配計算失敗（退出代碼 {proc.returncode}）。{suffix}\n可調低上下文容量、降低預留顯示記憶體，或關閉自動 GPU 分配並手動指定層數。")
-            return int(match.group(1))
+            return fitted_layers
         finally:
             await self.terminate(proc)
             self.fit_process = None
