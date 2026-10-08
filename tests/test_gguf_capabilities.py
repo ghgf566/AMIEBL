@@ -22,7 +22,7 @@ def gguf_string(value: str) -> bytes:
     return struct.pack("<Q", len(data)) + data
 
 
-def write_fixture(path: Path, *, nextn_layers: int | None, nextn_tensor: bool, context_length: int = 262144, chat_template: str = "", named_chat_template: str = "") -> None:
+def write_fixture(path: Path, *, nextn_layers: int | None, nextn_tensor: bool, context_length: int = 262144, chat_template: str = "", named_chat_template: str = "", second_named_chat_template: str = "") -> None:
     kv = []
     kv.append(gguf_string("general.architecture") + struct.pack("<I", 8) + gguf_string("qwen35"))
     kv.append(gguf_string("qwen35.context_length") + struct.pack("<I", 4) + struct.pack("<I", context_length))
@@ -30,6 +30,8 @@ def write_fixture(path: Path, *, nextn_layers: int | None, nextn_tensor: bool, c
         kv.append(gguf_string("tokenizer.chat_template") + struct.pack("<I", 8) + gguf_string(chat_template))
     if named_chat_template:
         kv.append(gguf_string("tokenizer.chat_template.reasoning") + struct.pack("<I", 8) + gguf_string(named_chat_template))
+    if second_named_chat_template:
+        kv.append(gguf_string("tokenizer.chat_template.tools") + struct.pack("<I", 8) + gguf_string(second_named_chat_template))
     if nextn_layers is not None:
         kv.append(
             gguf_string("qwen35.nextn_predict_layers")
@@ -167,6 +169,19 @@ class GgufCapabilityTests(unittest.TestCase):
             self.assertEqual(result["native_context"], 262144)
             self.assertEqual(result["mtp_tensor_count"], 1)
 
+    def test_multiple_named_templates_without_default_remain_unknown(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "ambiguous-templates.gguf"
+            write_fixture(
+                path,
+                nextn_layers=None,
+                nextn_tensor=False,
+                named_chat_template="{% if enable_thinking %}{{ '<think>' }}{% endif %}",
+                second_named_chat_template="{% for message in messages %}{{ message.content }}{% endfor %}",
+            )
+            result = manager.inspect_gguf_capabilities(str(path))
+            self.assertEqual(result["reasoning_capability"], "unknown")
+            self.assertEqual(result["reasoning_detection"], "pending")
     def test_default_chat_template_wins_over_named_reasoning_template(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "templates.gguf"
