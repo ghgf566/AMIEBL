@@ -255,8 +255,9 @@ def validate_config(value: Any) -> dict:
             raise ValueError("MTP 來源只能是模型內建或外部 Draft。")
         if not isinstance(m.get("mtp_draft_path"), str):
             raise ValueError("MTP Draft 路徑必須是文字。")
-        if m.get("mtp") and m.get("mtp_source") == "native" and m.get("mtp_capability") != "available":
-            raise ValueError("此 GGUF 沒有可用的內建 MTP / NextN head，請改用外部 MTP Draft 或關閉 MTP。")
+        # Do not reject native MTP here based on cached capability metadata.
+        # Existing configs may still say "unknown" until startup/save inspects
+        # the GGUF header. Real capability is enforced immediately before load.
         if m.get("mtp") and m.get("mtp_source") == "external" and not m.get("mtp_draft_path", "").strip():
             raise ValueError("使用外部 MTP Draft 時請指定 GGUF 路徑。")
         if m.get("mtp_capability") not in ("available", "unavailable", "incomplete", "unknown"):
