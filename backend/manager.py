@@ -1676,9 +1676,10 @@ class Manager:
                 self.active = None
                 self.queue.task_done()
 
-    def pending(self):
-        if self.config["api_port"] != self.port:
-            return True
+    def pending_restart(self):
+        return self.config["api_port"] != self.port
+
+    def pending_model_reload(self):
         if not self.loaded_config:
             return False
         live_model = self.loaded_config.get("model") or {}
@@ -1686,6 +1687,9 @@ class Manager:
         if current is None:
             return True
         return self.load_settings_changed(current)
+
+    def pending(self):
+        return self.pending_restart() or self.pending_model_reload()
 
     def idle_limit(self):
         if not self.model:
@@ -1712,7 +1716,8 @@ class Manager:
                 "unload_in_seconds": round(max(0, limit - idle), 1) if limit is not None and self.state == "ready" and not self.tickets else None,
                 "last_error": self.last_error, "api_url": f"http://127.0.0.1:{self.port}/v1/chat/completions",
                 "engine_version": self.engine_version, "slots": self.slots, "resources": self.resources,
-                "pending_config": self.pending(), "deferred_unload": self.deferred_unload}
+                "pending_config": self.pending(), "pending_restart": self.pending_restart(),
+                "pending_model_reload": self.pending_model_reload(), "deferred_unload": self.deferred_unload}
 
     def records(self):
         records = [copy.deepcopy(t.record) for t in self.tickets.values()] + list(self.history)
