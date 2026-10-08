@@ -126,7 +126,9 @@ public partial class MainWindow
             var changed = Clone(profile);
             changed["name"] = Required(name, "模式名稱"); changed["thinking_mode"] = Value(mode); changed["reasoning_level"] = Value(level); changed["budget_mode"] = Value(budgetMode);
             int budgetValue = Number(budget, "思考預算", 0, 1_000_000), maxValue = Number(max, "整次生成上限", 256, 1_000_000);
-            if (Value(mode) is "auto" or "on" && Value(budgetMode) == "custom" && budgetValue > maxValue - 256) throw new InvalidOperationException("整次生成上限需至少比自訂思考預算多 256 tokens，為回答與工具呼叫保留空間。");
+            int answerReserve = Math.Min(256, Math.Max(1, maxValue / 4));
+            if (Value(mode) is "auto" or "on" && Value(budgetMode) == "custom" && budgetValue > maxValue - answerReserve)
+                throw new InvalidOperationException($"自訂思考預算過高；整次生成上限至少需保留 {answerReserve} tokens 給回答與工具呼叫。");
             changed["thinking_budget"] = budgetValue; changed["max_tokens"] = maxValue;
             changed["effort"] = Value(level) switch { "light" => "low", "balanced" => "medium", "deep" => "high", "extreme" => "xhigh", _ => "medium" }; // 舊版相容欄位
             changed["agent_sync_mode"] = Value(agentSync);
