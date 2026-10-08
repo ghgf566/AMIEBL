@@ -107,7 +107,7 @@ def default_config() -> dict:
                         "auto_fit": True, "fit_target_enabled": False, "fit_target_mib": 2048, "cache_type": "q4_0", "cpu_threads": 0, "native_context": 0, "mtp": True, "mtp_source": "native", "mtp_draft_path": "", "mtp_draft_max": None, "mtp_capability": "unknown", "mtp_layers": 0,
                         "keep_loaded": False, "idle_minutes": None, "default_profile_id": "coding",
                         "temperature": None, "top_p": None, "top_k": None, "min_p": None,
-                        "reasoning_supported": True, "reasoning_capability": "unknown", "reasoning_efforts": [], "reasoning_default_effort": "", "reasoning_budget_supported": False, "reasoning_toggle_keys": [], "reasoning_detection": "pending"}],
+                        "reasoning_supported": False, "reasoning_capability": "unknown", "reasoning_efforts": [], "reasoning_default_effort": "", "reasoning_budget_supported": False, "reasoning_toggle_keys": [], "reasoning_detection": "pending"}],
             "profiles": [{"id": ident, "name": name, "thinking_mode": "auto", "reasoning_level": level,
                           "budget_mode": "auto", "thinking_budget": budget, "max_tokens": cap}
                          for ident, name, level, budget, cap in
