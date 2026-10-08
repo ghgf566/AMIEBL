@@ -143,7 +143,13 @@ class ManagerIntegration(unittest.TestCase):
         config = self.get("/manager/config")
         config.update(changes)
         response = self.api("PUT", "/manager/config", json=config)
-        self.assertEqual(response.status_code, 200, response.text)
+        if response.status_code != 200:
+            self.log.flush()
+            try:
+                diagnostic = (self.run_dir / "manager.log").read_text(encoding="utf-8", errors="replace")[-6000:]
+            except OSError as exc:
+                diagnostic = f"<unable to read manager.log: {exc}>"
+            self.fail(f"{response.status_code} != 200: {response.text}\nmanager.log tail:\n{diagnostic}")
         return config
 
     def records(self):
@@ -160,7 +166,7 @@ class ManagerIntegration(unittest.TestCase):
             self.assertEqual(response.status_code, 200, response.text)
 
     def auto_profile(self, **changes):
-        profiles = copy.deepcopy(self.config["profiles"])
+        profiles = copy.deepcopy(self.get("/manager/config")["profiles"])
         profiles[0].update(thinking_mode="auto", **changes)
         self.save(profiles=profiles)
 
@@ -361,7 +367,7 @@ class ManagerIntegration(unittest.TestCase):
         self.assertIsNone(rec["effort"])
         self.assertGreater(rec["thinking_budget"], 0)
     def test_client_reasoning_override_skips_classifier(self):
-        profiles = copy.deepcopy(self.config["profiles"])
+        profiles = copy.deepcopy(self.get("/manager/config")["profiles"])
         profiles[0]["thinking_mode"] = "auto"
         self.save(profiles=profiles)
         r = self.completion(reasoning_effort="low", chat_template_kwargs={"enable_thinking": True, "thinking_budget": 100})
