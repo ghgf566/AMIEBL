@@ -93,6 +93,16 @@ class ReasoningTemplateTests(unittest.TestCase):
         self.assertEqual(result["reasoning_capability"], "toggle")
         self.assertIn("enable_thinking", result["reasoning_toggle_keys"])
 
+    def test_gemma4_enable_thinking_channel(self):
+        template = """
+        {% set enable_thinking = enable_thinking | default(false) %}
+        {% if enable_thinking %}{{ '<|think|>\\n' }}{% endif %}
+        {% set thinking_text = message.get('reasoning') or message.get('reasoning_content') %}
+        """
+        result = manager.analyze_reasoning_template(template)
+        self.assertEqual(result["reasoning_capability"], "toggle")
+        self.assertIn("enable_thinking", result["reasoning_toggle_keys"])
+        self.assertTrue(result["reasoning_budget_supported"])
     def test_gemma_like_template_without_reasoning(self):
         template = "{% for message in messages %}{{ message.role }}: {{ message.content }}{% endfor %}"
         result = manager.analyze_reasoning_template(template)
