@@ -221,6 +221,32 @@ class ReasoningTemplateTests(unittest.TestCase):
         self.assertEqual(result["reasoning_capability"], "toggle")
         self.assertIn("enable_thinking", result["reasoning_toggle_keys"])
 
+    def test_minimax_thinking_mode_toggle(self):
+        template = """
+        {% set think_begin_token = '<mm:think>' %}
+        {% set think_end_token = '</mm:think>' %}
+        {% if thinking_mode is defined %}
+        {% if thinking_mode == "enabled" %}think
+        {% elif thinking_mode == "disabled" %}direct
+        {% elif thinking_mode == "adaptive" %}adaptive{% endif %}
+        {% endif %}
+        """
+        result = manager.analyze_reasoning_template(template)
+        self.assertEqual(result["reasoning_capability"], "toggle")
+        self.assertIn("thinking_mode", result["reasoning_toggle_keys"])
+        self.assertTrue(result["reasoning_budget_supported"])
+        self.assertEqual(manager.apply_reasoning_toggle({}, ["thinking_mode"], True)["thinking_mode"], "enabled")
+        self.assertEqual(manager.apply_reasoning_toggle({}, ["thinking_mode"], False)["thinking_mode"], "disabled")
+
+    def test_reasoning_strength_is_treated_as_native_effort_protocol(self):
+        template = """
+        {% set rs = reasoning_strength if reasoning_strength is defined and reasoning_strength else 'high' %}
+        {% if rs in ['low', 'medium', 'high', 'xhigh'] %}{{ '<think>' }}{% endif %}
+        """
+        result = manager.analyze_reasoning_template(template)
+        self.assertEqual(result["reasoning_capability"], "always")
+        self.assertEqual(result["reasoning_efforts"], ["low", "medium", "high", "xhigh"])
+        self.assertEqual(result["reasoning_default_effort"], "high")
     def test_gemma4_enable_thinking_channel(self):
         template = """
         {% set enable_thinking = enable_thinking | default(false) %}
