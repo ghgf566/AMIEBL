@@ -81,10 +81,12 @@ def model_entries(config):
     url = f"http://127.0.0.1:{config['api_port']}/v1/chat/completions"
     entries = []
     for model in config["models"]:
+        capability = model.get("reasoning_capability")
+        thinking = capability in ("toggle", "always") if capability is not None else bool(model.get("reasoning_supported", False))
         entry = {"id": model["id"], "name": model["name"], "url": url,
                  "toolCalling": model.get("tool_calling", True),
                  "vision": bool(model.get("vision") and model.get("mmproj")),
-                 "thinking": bool(model.get("reasoning_supported", True)), "streaming": True,
+                 "thinking": thinking, "streaming": True,
                  "contextWindow": model["context"]}
         entry["maxOutputTokens"] = min(max((p["max_tokens"] for p in config["profiles"]), default=4096),
                                        max(1, model["context"]-1024))
