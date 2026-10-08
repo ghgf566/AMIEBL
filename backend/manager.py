@@ -1389,7 +1389,7 @@ class Manager:
         kwargs = body.get("chat_template_kwargs") or {}
         reasoning = body.get("reasoning") if isinstance(body.get("reasoning"), dict) else {}
         explicit = any(k in body for k in ("reasoning_effort", "thinking_budget_tokens")) or "effort" in reasoning or any(k in kwargs for k in ("enable_thinking", "thinking", "add_nothink_token", "thinking_budget", "thinking_budget_tokens"))
-        answer_reserve = min(512, max(1, cap // 4))
+        answer_reserve = min(256, max(1, cap // 4))
         max_budget = max(0, cap - answer_reserve)
         if explicit:
             ticket.record["decision"] = "採用客戶端指定的思考設定"
