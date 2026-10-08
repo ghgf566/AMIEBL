@@ -12,7 +12,11 @@ public sealed class SmoothExpander : UserControl
     private readonly Expander native=new() { HorizontalAlignment=HorizontalAlignment.Stretch,HorizontalContentAlignment=HorizontalAlignment.Stretch };
     private Border? viewport, body;
     private ToggleButton? header;
-    private readonly DispatcherTimer timer=new() { Interval=TimeSpan.FromMilliseconds(16) };
+    private bool animating;
+    private int frameCount;
+    private double lastFrameMs,maxFrameGap;
+    public int LastAnimationFrames { get; private set; }
+    public double LastAnimationMaxGapMs { get; private set; }
     private readonly Stopwatch clock=new();
     private readonly Windows.UI.ViewManagement.UISettings settings=new();
     private double from,to;
@@ -31,7 +35,7 @@ public sealed class SmoothExpander : UserControl
     private void ContentSizeChanged(object sender,SizeChangedEventArgs args)
     {
         if(measuring||body is null||!IsExpanded)return;
-        MeasureBody();if(!timer.IsEnabled)viewport!.Height=to;
+        MeasureBody();if(!animating)viewport!.Height=to;
     }
     public ExpandDirection ExpandDirection { get=>native.ExpandDirection; set=>native.ExpandDirection=value; }
     public bool IsExpanded { get=>native.IsExpanded; set=>native.IsExpanded=value; }
@@ -48,25 +52,38 @@ public sealed class SmoothExpander : UserControl
         native.Expanding+=(_,_)=>Expanding?.Invoke(this,EventArgs.Empty);
         Loaded+=(_,_)=>PrepareTemplate();
         native.RegisterPropertyChangedCallback(Expander.IsExpandedProperty,(_,_)=>Animate());
-        timer.Tick+=(_,_)=>
-        {
-            if(viewport is null)return;
-            double t=Math.Clamp(clock.Elapsed.TotalMilliseconds/260,0,1);
-            AnimationProgress=t*t*(3-2*t);viewport.Height=from+(to-from)*AnimationProgress;
-            ProgressChanged?.Invoke(this,EventArgs.Empty);
-            if(t>=1)Finish();
-        };
         SizeChanged+=(_,e)=>
         {
             if(body is null||!IsExpanded||Math.Abs(e.NewSize.Width-e.PreviousSize.Width)<0.5)return;
-            MeasureBody();if(!timer.IsEnabled)viewport!.Height=to;
+            MeasureBody();if(!animating)viewport!.Height=to;
         };
-        Unloaded+=(_,_)=>timer.Stop();
+        Unloaded+=(_,_)=>StopFrames();
+    }
+    private void StartFrames()
+    {
+        animating=true;frameCount=0;lastFrameMs=0;maxFrameGap=0;
+        Microsoft.UI.Xaml.Media.CompositionTarget.Rendering+=RenderFrame;
+    }
+    private void StopFrames()
+    {
+        if(!animating)return;
+        Microsoft.UI.Xaml.Media.CompositionTarget.Rendering-=RenderFrame;animating=false;
+    }
+    private void RenderFrame(object? sender,object args)
+    {
+        if(viewport is null)return;
+        double elapsed=clock.Elapsed.TotalMilliseconds;
+        if(frameCount>0)maxFrameGap=Math.Max(maxFrameGap,elapsed-lastFrameMs);
+        lastFrameMs=elapsed;frameCount++;
+        double t=Math.Clamp(elapsed/260,0,1);
+        AnimationProgress=t*t*(3-2*t);viewport.Height=from+(to-from)*AnimationProgress;
+        ProgressChanged?.Invoke(this,EventArgs.Empty);
+        if(t>=1)Finish();
     }
     private void PrepareTemplate()
     {
         if(viewport is not null)return;
-        timer.Stop();native.ApplyTemplate();
+        StopFrames();native.ApplyTemplate();
         header=Find(native,"ExpanderHeader") as ToggleButton;
         viewport=Find(native,"ExpanderContentClip") as Border;
         body=Find(native,"ExpanderContent") as Border;
@@ -98,7 +115,7 @@ public sealed class SmoothExpander : UserControl
         body.SizeChanged+=(_,e)=>
         {
             if(!IsExpanded||Math.Abs(e.NewSize.Height-to)<0.5)return;
-            to=e.NewSize.Height;if(!timer.IsEnabled)viewport.Height=to;
+            to=e.NewSize.Height;if(!animating)viewport.Height=to;
         };
         if(IsExpanded){MeasureBody();viewport.Height=to;}
     }
@@ -130,12 +147,13 @@ public sealed class SmoothExpander : UserControl
         if(viewport is null||body is null)return;
         SetCorners();viewport.Visibility=Visibility.Visible;body.Visibility=Visibility.Visible;
         from=ContentHeight;MeasureBody();if(!IsExpanded)to=0;
-        AnimationProgress=0;timer.Stop();clock.Restart();
-        if(settings.AnimationsEnabled&&Math.Abs(from-to)>0.5)timer.Start();else Finish();
+        AnimationProgress=0;StopFrames();clock.Restart();
+        if(settings.AnimationsEnabled&&Math.Abs(from-to)>0.5)StartFrames();else Finish();
     }
     private void Finish()
     {
-        timer.Stop();viewport!.Height=to;AnimationProgress=1;
+        LastAnimationFrames=frameCount;LastAnimationMaxGapMs=maxFrameGap;
+        StopFrames();viewport!.Height=to;AnimationProgress=1;
         if(IsExpanded){body!.Visibility=Visibility.Visible;if(body.RenderTransform is Microsoft.UI.Xaml.Media.CompositeTransform transform)transform.TranslateY=0;Microsoft.UI.Xaml.Hosting.ElementCompositionPreview.GetElementVisual(viewport).Clip=null;}
         if(!IsExpanded)viewport.Visibility=Visibility.Collapsed;
         ProgressChanged?.Invoke(this,EventArgs.Empty);AnimationCompleted?.Invoke(this,EventArgs.Empty);

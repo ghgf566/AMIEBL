@@ -66,3 +66,11 @@ The isolated native regression samples intermediate action positions, task-card 
 SmoothExpander now hosts a real WinUI Expander. It obtains the installed SDK header Style (including directional chevron and pointer/keyboard states), body brushes and padding, then applies a layout-only ControlTemplate with the named native parts. The body viewport still animates actual height; this is a customized native template, not the unmodified default template. This avoids competing native visibility/translation storyboards while retaining the native control and its automation behavior. SDK template-part changes are detected explicitly and require a compatibility update.
 
 The isolated native regression additionally checks that the SDK header Style is present, toggles the actual header to verify two-way expansion, and reverses an animation before completion without jumping its height. Screenshot review verifies visible expanded content as well as the layout measurements.
+
+## Stable compact navigation and frame pacing
+
+Navigation uses the native PaneTitle rather than a variable-height PaneHeader. The Chinese tagline, version and author occupy PaneFooter only while the pane is open. This keeps all five menu items at the same vertical positions when toggling compact/open, and avoids clipping footer text into the compact rail.
+
+SmoothExpander now advances on CompositionTarget.Rendering instead of a 16 ms DispatcherTimer. Rendering subscription exists only during an animation and is removed on completion, reversal and unload. Reveal targets are calculated once at expansion and tiny redundant ChangeView calls are skipped. Actual layout heights still interpolate, so this is UI-thread layout motion; it is not a claim of entirely compositor-independent animation.
+
+The isolated regression toggles the pane four times, checks every menu item's Y coordinate, footer visibility and unchanged selection/page instance, captures compact/open screenshots, and records animation update counts and maximum callback intervals. Callback counts are diagnostics, not presented-screen FPS or a hardware benchmark. API documentation: https://learn.microsoft.com/en-us/windows/windows-app-sdk/api/winrt/microsoft.ui.xaml.media.compositiontarget.rendering?view=windows-app-sdk-1.8

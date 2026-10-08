@@ -40,6 +40,21 @@ public sealed partial class MainWindow
         for(int i=0;i<VisualTreeHelper.GetChildrenCount(root);i++) {var found=ExpanderHeader(VisualTreeHelper.GetChild(root,i));if(found is not null)return found;}
         return null;
     }
+    private readonly JsonArray animationSamples=new();
+    private async Task VerifyNavigationPane()
+    {
+        Navigation.IsPaneOpen=true;Root.UpdateLayout();await Task.Delay(300);
+        var items=Navigation.MenuItems.Cast<NavigationViewItem>().ToArray();
+        double[] positions=items.Select(item=>item.TransformToVisual(Root).TransformPoint(new Windows.Foundation.Point()).Y).ToArray();
+        var selected=Navigation.SelectedItem;var content=PageHost.Content;
+        foreach(bool open in new[]{false,true,false,true})
+        {
+            Navigation.IsPaneOpen=open;Root.UpdateLayout();await Task.Delay(300);Root.UpdateLayout();
+            if(PaneBrandFooter.Visibility!=(open?Visibility.Visible:Visibility.Collapsed))throw new InvalidOperationException("精簡導覽列沒有隱藏品牌與署名。");
+            for(int i=0;i<items.Length;i++)if(Math.Abs(items[i].TransformToVisual(Root).TransformPoint(new Windows.Foundation.Point()).Y-positions[i])>1)throw new InvalidOperationException("收放導覽列使頁面按鈕垂直移位。");
+            if(Navigation.SelectedItem!=selected||PageHost.Content!=content)throw new InvalidOperationException("收放導覽列改變了頁面或選取。");
+        }
+    }
     private FrameworkElement? modelActionRow,recentTaskCard;
     private async Task VerifyAnchoredExpander(SmoothExpander expander)
     {
@@ -66,6 +81,8 @@ public sealed partial class MainWindow
             if(Math.Abs(header.TransformToVisual(Root).TransformPoint(new Windows.Foundation.Point(0,0)).Y-y)>1)throw new InvalidOperationException("展開時標題瞬移。");
             await Task.Delay(300);Root.UpdateLayout();
             double neighborAfter=NeighborPosition();
+            if(motionSettings.AnimationsEnabled&&expander.LastAnimationFrames<2)throw new InvalidOperationException("動畫沒有透過繪製幀推進。");
+            animationSamples.Add(new JsonObject { ["panel"]=modelPanel?"模型位置":"服務紀錄",["open"]=open,["frames"]=expander.LastAnimationFrames,["max_interval_ms"]=Math.Round(expander.LastAnimationMaxGapMs,2) });
             if(motionSettings.AnimationsEnabled&&Math.Abs(neighborAfter-neighborBefore)>2&&(neighborMiddle<=Math.Min(neighborBefore,neighborAfter)+0.5||neighborMiddle>=Math.Max(neighborBefore,neighborAfter)-0.5))throw new InvalidOperationException("周圍按鈕／任務卡片沒有平滑讓位。");
             if(Math.Abs(header.TransformToVisual(Root).TransformPoint(new Windows.Foundation.Point(0,0)).Y-y)>1)throw new InvalidOperationException("收放後標題位置變動。");
         }
@@ -79,18 +96,19 @@ public sealed partial class MainWindow
     private SmoothExpander? revealExpander;
     private void AttachEditorReveal(SmoothExpander expander)
     {
-        ScrollViewer? owner=null;double start=0;
+        ScrollViewer? owner=null;double start=0,target=0;
         double Target()
         {
             if(owner?.Content is not UIElement content)return start;
             return Math.Max(start,expander.TransformToVisual(content).TransformPoint(new Windows.Foundation.Point(0,0)).Y-12);
         }
-        expander.Expanding+=(_,_)=> {owner=editorScroll;start=owner?.VerticalOffset??0;revealExpander=expander;};
+        expander.Expanding+=(_,_)=> {owner=editorScroll;start=owner?.VerticalOffset??0;target=Target();revealExpander=expander;};
         expander.ProgressChanged+=(_,_)=>
         {
             if(owner is null||owner!=editorScroll||revealExpander!=expander||!expander.IsExpanded)return;
-            double desired=start+(Target()-start)*expander.AnimationProgress;
-            owner.ChangeView(null,Math.Clamp(desired,0,owner.ScrollableHeight),null,true);
+            double desired=start+(target-start)*expander.AnimationProgress;
+            double offset=Math.Clamp(desired,0,owner.ScrollableHeight);
+            if(Math.Abs(offset-owner.VerticalOffset)>=0.5)owner.ChangeView(null,offset,null,true);
         };
         expander.AnimationCompleted+=(_,_)=>
         {

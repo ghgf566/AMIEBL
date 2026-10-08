@@ -54,9 +54,13 @@ public sealed partial class MainWindow : Window
         timer.Tick += async (_, _) => await Poll();
         Root.SizeChanged+=(_,_)=>UpdateNavigationIndicator();
         Root.Loaded+=(_,_)=>UpdateNavigationIndicator();
+        Navigation.RegisterPropertyChangedCallback(NavigationView.IsPaneOpenProperty,(_,_)=>UpdatePaneBrand());
+        UpdatePaneBrand();
         Navigation.PaneOpened+=(_,_)=>UpdateNavigationIndicator();
         Navigation.PaneClosed+=(_,_)=>UpdateNavigationIndicator();
     }
+
+    private void UpdatePaneBrand()=>PaneBrandFooter.Visibility=Navigation.IsPaneOpen?Visibility.Visible:Visibility.Collapsed;
 
     public async void Start()
     {
@@ -231,14 +235,16 @@ public sealed partial class MainWindow : Window
             overviewScroll!.ChangeView(null,Math.Min(30,overviewScroll.ScrollableHeight),null,true);await Task.Delay(30);double overviewOffset=overviewScroll.VerticalOffset;
             await Poll();Root.UpdateLayout();await Task.Delay(30);
             if(!ReferenceEquals(overviewContent,PageHost.Content)||Math.Abs(overviewScroll.VerticalOffset-overviewOffset)>1)throw new InvalidOperationException("總覽輪詢重設了捲動位置。");
+            await VerifyNavigationPane();
             for(int i=0;i<15;i++) { Navigation.SelectedItem=Navigation.MenuItems[i%5];await Task.Delay(25); }
             if(page!="系統"||working||!Navigation.IsEnabled)throw new InvalidOperationException("快速切頁狀態不一致。");
             requests=new JsonArray(new JsonObject { ["id"]="ux-fixture",["phase"]="completed",["model_name"]="回歸測試模型",["profile_name"]="程式設計",["elapsed_seconds"]=2.5,["prompt_tokens"]=128,["generated_tokens"]=64,["generation_tps"]=25.6,["decision"]="on",["effort"]="medium",["thinking_budget"]=64 });
             serviceLogs="[測試資料] 任務完成；未啟動推理。";
             string screenshotDir=Path.Combine(host.DataDir,"winui-screenshots");Directory.CreateDirectory(screenshotDir);
-            foreach(var next in new[]{"總覽","模型庫","模型庫效能","使用模式","思考預算","任務與紀錄","服務紀錄展開","模型位置展開","系統"})
+            foreach(var next in new[]{"總覽","導覽列精簡","模型庫","模型庫效能","使用模式","思考預算","任務與紀錄","服務紀錄展開","模型位置展開","系統"})
             {
-                ShowPage(next=="模型庫效能"?"模型庫":next=="思考預算"?"使用模式":next=="服務紀錄展開"?"任務與紀錄":next=="模型位置展開"?"模型庫":next);Root.Measure(new Windows.Foundation.Size(1240,820));Root.Arrange(new Windows.Foundation.Rect(0,0,1240,820));Root.UpdateLayout();
+                Navigation.IsPaneOpen=next!="導覽列精簡";
+                ShowPage(next=="導覽列精簡"?"總覽":next=="模型庫效能"?"模型庫":next=="思考預算"?"使用模式":next=="服務紀錄展開"?"任務與紀錄":next=="模型位置展開"?"模型庫":next);Root.Measure(new Windows.Foundation.Size(1240,820));Root.Arrange(new Windows.Foundation.Rect(0,0,1240,820));Root.UpdateLayout();
                 if(next=="模型庫")await VerifyAnchoredExpander(modelLocations!);
                 if(next=="任務與紀錄")await VerifyAnchoredExpander(serviceLogExpander!);
                 if(next=="模型位置展開")modelLocations!.IsExpanded=true;
@@ -271,7 +277,7 @@ public sealed partial class MainWindow : Window
                 await reader.LoadAsync((uint)stream.Size);var bytes=new byte[(int)stream.Size];reader.ReadBytes(bytes);await File.WriteAllBytesAsync(Path.Combine(screenshotDir,next+".png"),bytes);
                 pages.Add(new JsonObject { ["page"]=next,["rendered"]=true,["width"]=bitmap.PixelWidth,["height"]=bitmap.PixelHeight });
             }
-            await File.WriteAllTextAsync(Path.Combine(host.DataDir,"winui-smoke-test.json"),new JsonObject { ["ok"]=true,["editor_refresh_verified"]=true,["layout_animation_verified"]=true,["overview_scroll_verified"]=true,["editor_reveal_verified"]=true,["exit_visibility_verified"]=true,["anchored_expanders_verified"]=true,["mtp_dependency_verified"]=true,["system_footer_verified"]=true,["fixed_footer_verified"]=true,["slider_sync_verified"]=true,["model_locations_verified"]=true,["rapid_navigation_verified"]=true,["pages"]=pages,["model_loaded"]=J.S(vm.Status,"state")!="unloaded",["autostart_changed"]=false }.ToJsonString(new JsonSerializerOptions {WriteIndented=true}));
+            await File.WriteAllTextAsync(Path.Combine(host.DataDir,"winui-smoke-test.json"),new JsonObject { ["ok"]=true,["editor_refresh_verified"]=true,["layout_animation_verified"]=true,["navigation_pane_verified"]=true,["render_frames_verified"]=true,["animation_samples"]=animationSamples,["overview_scroll_verified"]=true,["editor_reveal_verified"]=true,["exit_visibility_verified"]=true,["anchored_expanders_verified"]=true,["mtp_dependency_verified"]=true,["system_footer_verified"]=true,["fixed_footer_verified"]=true,["slider_sync_verified"]=true,["model_locations_verified"]=true,["rapid_navigation_verified"]=true,["pages"]=pages,["model_loaded"]=J.S(vm.Status,"state")!="unloaded",["autostart_changed"]=false }.ToJsonString(new JsonSerializerOptions {WriteIndented=true}));
         }
         finally {vm.Config=await api!.Put("/manager/config",original);vm.Editor.Discard();}
     }
