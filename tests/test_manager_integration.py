@@ -737,6 +737,47 @@ class ManagerIntegration(unittest.TestCase):
         self.assertFalse(self.get("/manager/status")["pending_config"])
         forwarded = self.events("post")[-1]["body"]
         self.assertLessEqual(forwarded["max_tokens"], 3000)
+    def test_default_profile_change_applies_without_engine_reload(self):
+        self.load()
+        config = self.get("/manager/config")
+        model = next(x for x in config["models"] if x["id"] == "test-model")
+        model["default_profile_id"] = "quick-chat"
+        response = self.api("PUT", "/manager/config", json=config)
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertFalse(self.get("/manager/status")["pending_config"])
+        r = self.completion(max_tokens=9999)
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(len(self.events("start")), 1)
+        self.assertEqual(self.events("post")[-1]["body"]["max_tokens"], 2048)
+
+    def test_vision_projector_reaches_engine_args(self):
+        projector = self.run_dir / "mmproj-test.gguf"
+        projector.write_bytes(b"GGUFfake-projector")
+        config = self.get("/manager/config")
+        model = next(x for x in config["models"] if x["id"] == "test-model")
+        model.update(vision=True, mmproj=str(projector), auto_fit=False)
+        response = self.api("PUT", "/manager/config", json=config)
+        self.assertEqual(response.status_code, 200, response.text)
+        self.load()
+        argv = self.events("start")[-1]["argv"]
+        self.assertEqual(argv[argv.index("--mmproj") + 1], str(projector))
+        self.assertEqual(argv[argv.index("--image-min-tokens") + 1], "1024")
+
+    def test_inactive_model_subsettings_do_not_create_false_pending_reload(self):
+        self.load()
+        config = self.get("/manager/config")
+        model = next(x for x in config["models"] if x["id"] == "test-model")
+        self.assertFalse(model["auto_fit"])
+        self.assertFalse(model["mtp"])
+        self.assertFalse(model["vision"])
+        model["fit_target_mib"] = 9999
+        model["fit_target_enabled"] = not model.get("fit_target_enabled", False)
+        model["mtp_draft_path"] = "unused-draft.gguf"
+        model["mtp_draft_max"] = 7
+        model["mmproj"] = "unused-mmproj.gguf"
+        response = self.api("PUT", "/manager/config", json=config)
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertFalse(self.get("/manager/status")["pending_config"])
     def test_request_time_model_settings_apply_without_engine_reload(self):
         self.load()
         config = self.get("/manager/config")
