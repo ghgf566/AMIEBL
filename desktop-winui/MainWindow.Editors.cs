@@ -159,10 +159,10 @@ public sealed partial class MainWindow
         }));
         if (draft.Collection=="models")
         {
-            panel.Children.Add(Row(Action("載入／重新載入",async ()=> { await SaveEditor(); await api!.Post("/manager/load",new JsonObject { ["model_id"]=draft.Id }); await Poll(); }),Action("設為預設",async ()=> { await SaveEditor(); await vm.SaveConfig(c=>c["default_model_id"]=draft.Id); PopulateList("models");RestoreEntitySelection("models");Message("已設為預設模型。"); }),Action("移除登錄",DeleteEntity)));
+            panel.Children.Add(Row(Action("載入／重新載入",async ()=> { await SaveEditor(); await api!.Post("/manager/load",new JsonObject { ["model_id"]=draft.Id }); await Poll(); }),Action("設為預設",async ()=> { await SaveEditor(); await vm.SaveConfig(c=>c["default_model_id"]=draft.Id); PopulateList("models");RestoreEntitySelection("models");Message("已設為預設模型。"); }),DangerAction("移除登錄",DeleteEntity)));
 
         }
-        else if (draft.Collection=="profiles") panel.Children.Add(Action("刪除此模式",DeleteEntity));
+        else if (draft.Collection=="profiles") panel.Children.Add(DangerAction("刪除此模式",DeleteEntity));
         if(draft.Collection=="system")panel.Children.Add(Card("設定備份與還原",Row(Action("匯出設定",Export),Action("匯入設定",Import))));
         var layout=new Grid { RowSpacing=12 };layout.RowDefinitions.Add(new(){Height=new GridLength(1,GridUnitType.Star)});layout.RowDefinitions.Add(new(){Height=GridLength.Auto});
         editorScroll=Scroll(panel);

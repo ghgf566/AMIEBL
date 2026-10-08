@@ -139,6 +139,13 @@ public sealed partial class MainWindow : Window
         button.Command=new AsyncCommand(() => Run(action), Error);
         return button;
     }
+    private Button DangerAction(string label,Func<Task> action)
+    {
+        var button=Action(label,action);
+        button.Background=ExitButton.Background;button.Foreground=ExitButton.Foreground;
+        foreach(var resource in ExitButton.Resources)button.Resources[resource.Key]=resource.Value;
+        return button;
+    }
     private static StackPanel Row(params UIElement[] controls) { var row=new StackPanel { Orientation=Orientation.Horizontal, Spacing=8 }; foreach (var control in controls) row.Children.Add(control); return row; }
     private ScrollViewer? overviewScroll;
     private TextBlock? overviewModel,overviewState,overviewQueue,overviewMemory,overviewConnection,overviewError;
