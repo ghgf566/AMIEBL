@@ -571,11 +571,13 @@ public partial class MainWindow : Window
         var keep = Check(panel, "保持載入，不因閒置而卸載", J.B(model, "keep_loaded"));
         var idle = Field(panel, "閒置卸載分鐘（留白沿用系統設定；0 代表不自動卸載）", J.S(model, "idle_minutes"));
         var profile = Choice(panel, "預設使用模式", J.S(model, "default_profile_id", "coding"), J.A(config, "profiles").Select(x => (J.S(x, "id"), J.S(x, "name"))).ToArray());
+        panel.Children.Add(Text("只適用於沒有明確指定 Profile 的請求。VS Code Agent 的 AMIEBL_PROFILE 標記、API model::profile 別名及 X-LLM-Profile 指定值會優先。", 11, true));
         var advanced = new StackPanel { Margin = new Thickness(0, 15, 0, 0) };
         var temperature = FieldWithHint(advanced, "Temperature（隨機度 / 創意程度）", J.S(model, "temperature", ""), "控制回答的「隨機性與創意發散程度」。\n\n• 常用範圍：0.0 ~ 2.0；進階輸入最高允許 5.0\n\n• 典型值：\n  - 寫程式／數學／邏輯推理：0.0 ~ 0.2（精準嚴謹、不胡思亂想）。\n  - 日常聊天／通用問答：0.7 ~ 0.8（自然生動）。\n  - 創意寫作／故事創作：0.9 ~ 1.1（詞彙豐富多元）。\n\n• 調高／調低影響：\n  - 調低：回答固定、冷靜、嚴謹，重複發問會得到一致答案。\n  - 調高：回答更有想像力，但太高（>1.2）容易語無倫次。\n\n• 保留空白或 auto：由客戶端或 llama.cpp 自動決定。", "auto（預設）");
         var topP = FieldWithHint(advanced, "Top P（核採樣 / 候選詞累積機率）", J.S(model, "top_p", ""), "控制候選字詞的「篩選累積機率範圍」。\n\n• 範圍：0.0 ~ 1.0\n\n• 典型值：0.9 ~ 0.95（或保持 auto）。\n\n• 調高／調低影響：\n  - 調低（如 0.5~0.7）：只在累積機率最高的核心詞彙中挑選，回答聚焦保守。\n  - 調高（如 0.95~1.0）：允許考慮更多可能的詞彙，多樣性更高。\n\n• 建議：通常保持 auto，若不熟悉請微調 Temperature 即可。\n\n• 保留空白或 auto：由客戶端或 llama.cpp 自動決定。", "auto（預設）");
         var topK = FieldWithHint(advanced, "Top K（候選詞數量上限）", J.S(model, "top_k", ""), "每次生成時「只保留機率最高的前 K 個詞」來進行抽樣。\n\n• 常用範圍：0 ~ 100（0 代表不設限）；進階輸入最高允許 100000。\n\n• 典型值：40（llama.cpp 常用 40）。\n\n• 調高／調低影響：\n  - 調低（如 20）：強制排除冷門詞，杜絕奇怪生僻字。\n  - 調高（如 40~80）：詞彙更靈活豐富；0 代表不限制。\n\n• 保留空白或 auto：由客戶端或 llama.cpp 自動決定（通常為 40）。", "auto（預設）");
         var minP = FieldWithHint(advanced, "Min P（最低相對機率門檻）", J.S(model, "min_p", ""), "以「最高機率的詞」為基準，剔除相對機率太低的極冷門候選詞。\n\n• 範圍：0.0 ~ 1.0\n\n• 典型值：0.05（即相對最高機率不到 5% 的詞直接淘汰）；0 代表不啟用。\n\n• 調高／調低影響：\n  - 這是一種比 Top P 更自然的新型抗幻覺採樣技術。\n  - 調高（如 0.1）：更強烈排除冷門詞，提高回答嚴謹度。\n  - 調低（如 0.01~0.05）：放寬篩選，保持語言流暢。\n\n• 保留空白或 auto：由客戶端或 llama.cpp 自動決定（0.05 或停用）。", "auto（預設）");
+        advanced.Children.Add(Text("進階採樣設定：填入明確數值時，AMIEBL 會覆蓋客戶端附帶的預設採樣值；留白／auto 時才交由客戶端或 llama.cpp 決定。這四個欄位對下一筆推理立即生效，不需要重新載入模型。", 11, true));
         var reasoningInfo = Section("Reasoning 能力 · 自動偵測");
         string reasoningCapability = J.S(model, "reasoning_capability", "unknown");
         reasoningInfo.Children.Add(Text(reasoningCapability switch
