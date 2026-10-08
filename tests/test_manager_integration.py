@@ -574,6 +574,26 @@ class ManagerIntegration(unittest.TestCase):
         self.assertTrue(rec["cancel_confirmed"])
         eventually(lambda: self.get("/manager/status")["active_count"] == 0)
 
+    def test_zero_idle_timeout_disables_auto_unload(self):
+        self.save(idle_minutes=0)
+        self.load()
+        deadline = time.monotonic() + 1.2
+        while time.monotonic() < deadline:
+            self.assertEqual(self.get("/manager/status")["state"], "ready")
+            time.sleep(0.1)
+
+    def test_model_zero_idle_timeout_overrides_global_unload(self):
+        config = self.get("/manager/config")
+        config["idle_minutes"] = 0.01
+        model = next(x for x in config["models"] if x["id"] == "test-model")
+        model["idle_minutes"] = 0
+        response = self.api("PUT", "/manager/config", json=config)
+        self.assertEqual(response.status_code, 200, response.text)
+        self.load()
+        deadline = time.monotonic() + 1.0
+        while time.monotonic() < deadline:
+            self.assertEqual(self.get("/manager/status")["state"], "ready")
+            time.sleep(0.1)
     def test_idle_unloads_and_observations_do_not_reset_timer(self):
         self.save(idle_minutes=0.025)
         self.load()
