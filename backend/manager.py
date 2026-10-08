@@ -854,9 +854,13 @@ class Manager:
         if self.tickets and reload_needed:
             raise ValueError("目前有執行中或排隊任務，請完成後再切換或重新載入模型。")
         if self.load_task and not self.load_task.done():
-            if self.model and self.model["id"] == ident and not self.load_settings_changed(model):
+            same_loading_config = (
+                self.model and self.model["id"] == ident
+                and engine_load_model_config(self.model) == engine_load_model_config(model)
+            )
+            if same_loading_config:
                 return
-            raise ValueError("模型正在載入，請稍候。")
+            raise ValueError("模型正在以舊設定載入；請等這次載入完成後，再重新載入以套用新設定。")
         if not reload_needed:
             return
         self.manual_loading = True
