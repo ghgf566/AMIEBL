@@ -79,14 +79,22 @@ if (Test-Path -LiteralPath $manifestPath) {
     }
     Remove-Item -LiteralPath $manifestPath -Force
     Remove-Item -LiteralPath (Join-Path $target 'installed.flag') -Force -ErrorAction SilentlyContinue
-    # Remove empty directories only. Any user-created file keeps its folder.
-    Get-ChildItem -LiteralPath $target -Directory -Recurse -ErrorAction SilentlyContinue |
-        Sort-Object { $_.FullName.Length } -Descending |
-        ForEach-Object {
-            if (@(Get-ChildItem -LiteralPath $_.FullName -Force -ErrorAction SilentlyContinue).Count -eq 0) {
-                Remove-Item -LiteralPath $_.FullName -ErrorAction SilentlyContinue
-            }
+    # Inspect only directories containing tracked application files. Never
+    # recursively enumerate user's data/, models/, or other unknown folders.
+    $trackedDirectories = @($manifest.files | ForEach-Object {
+        $parent = [IO.Path]::GetDirectoryName(([string]$_.path))
+        while ($parent) {
+            $full = [IO.Path]::GetFullPath((Join-Path $target $parent))
+            if ($full.StartsWith($rootPrefix, [StringComparison]::OrdinalIgnoreCase)) { $full }
+            $parent = [IO.Path]::GetDirectoryName($parent)
         }
+    } | Sort-Object -Unique | Sort-Object Length -Descending)
+    foreach ($directory in $trackedDirectories) {
+        if ((Test-Path -LiteralPath $directory -PathType Container) -and
+            @(Get-ChildItem -LiteralPath $directory -Force -ErrorAction SilentlyContinue).Count -eq 0) {
+            Remove-Item -LiteralPath $directory -ErrorAction SilentlyContinue
+        }
+    }
     if (@(Get-ChildItem -LiteralPath $target -Force -ErrorAction SilentlyContinue).Count -eq 0) {
         Remove-Item -LiteralPath $target -ErrorAction SilentlyContinue
     }
