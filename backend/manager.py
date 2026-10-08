@@ -465,7 +465,7 @@ class Manager:
             atomic_json(self.config_path, self.config)
         capability_changed = False
         for model in self.config["models"]:
-            if model.get("mtp_capability", "unknown") == "unknown" and Path(model["path"]).is_file():
+            if (model.get("mtp_capability", "unknown") == "unknown" or model.get("native_context", 0) <= 0) and Path(model["path"]).is_file():
                 detected = inspect_gguf_capabilities(model["path"])
                 model["mtp_capability"] = detected["mtp_capability"]
                 model["mtp_layers"] = detected["mtp_layers"]
@@ -540,7 +540,7 @@ class Manager:
                     continue
                 old = previous.get(model.get("id"))
                 path_changed = old is None or old.get("path") != model.get("path")
-                if path_changed or model.get("mtp_capability", "unknown") == "unknown":
+                if path_changed or model.get("mtp_capability", "unknown") == "unknown" or model.get("native_context", 0) <= 0:
                     detected = inspect_gguf_capabilities(model["path"])
                     model["mtp_capability"] = detected["mtp_capability"]
                     model["mtp_layers"] = detected["mtp_layers"]
