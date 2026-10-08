@@ -441,7 +441,7 @@ public partial class MainWindow : Window
         int nativeContext = J.I(model, "native_context", 0);
         int currentContext = J.I(model, "context", 32768);
         int contextSliderMin = nativeContext > 0 && nativeContext < 2048 ? 512 : 2048;
-        int contextSliderMax = nativeContext > 0 ? Math.Max(contextSliderMin, nativeContext) : Math.Max(131072, currentContext);
+        int contextSliderMax = nativeContext > 0 ? Math.Max(contextSliderMin, nativeContext) : 2_097_152;
         var contextPanel = Section("上下文容量", nativeContext > 0 ? $"GGUF 宣告的原生上限：{nativeContext:N0} tokens" : "尚未偵測到模型原生上限；仍可直接輸入精確 token 數。");
         var context = new TextBox { Text = currentContext.ToString(CultureInfo.InvariantCulture), Margin = new Thickness(0, 0, 0, 6) };
         contextPanel.Children.Add(context);
