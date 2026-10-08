@@ -25,6 +25,17 @@ class IntegrationTests(unittest.TestCase):
         self.loc.start()
         self.addCleanup(self.loc.stop)
 
+    def test_model_picker_thinking_flag_prefers_detected_capability(self):
+        config = copy.deepcopy(self.config)
+        model = config["models"][0]
+        model.update(reasoning_capability="unknown", reasoning_supported=True)
+        self.assertFalse(integration.model_entries(config)[0]["thinking"])
+        model["reasoning_capability"] = "toggle"
+        model["reasoning_supported"] = False
+        self.assertTrue(integration.model_entries(config)[0]["thinking"])
+        model.pop("reasoning_capability")
+        model["reasoning_supported"] = True
+        self.assertTrue(integration.model_entries(config)[0]["thinking"])
     def test_jsonc_preserves_strings_and_strips_comments(self):
         source = '[ // a comment\n {"url":"http://localhost", "secret":"a/*b*/,]\\\"",},]'
         result = integration.read_jsonc(source)
