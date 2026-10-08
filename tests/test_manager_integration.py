@@ -293,6 +293,57 @@ class ManagerIntegration(unittest.TestCase):
         self.assertEqual(self.events("classifier"), [])
         self.assertEqual(len(self.events("post")), 1)
 
+    def test_abstract_deep_profile_maps_to_native_effort(self):
+        config = self.get("/manager/config")
+        model = next(x for x in config["models"] if x["id"] == "test-model")
+        model.update(
+            reasoning_capability="toggle",
+            reasoning_efforts=["low", "medium", "xhigh"],
+            reasoning_default_effort="xhigh",
+            reasoning_budget_supported=True,
+            reasoning_toggle_keys=["enable_thinking"],
+            reasoning_detection="legacy",
+        )
+        profile = next(x for x in config["profiles"] if x["id"] == "coding")
+        profile.update(thinking_mode="on", reasoning_level="deep", budget_mode="auto")
+        response = self.api("PUT", "/manager/config", json=config)
+        self.assertEqual(response.status_code, 200, response.text)
+        r = self.completion()
+        self.assertEqual(r.status_code, 200, r.text)
+        forwarded = self.events("post")[-1]["body"]
+        self.assertEqual(forwarded["reasoning_effort"], "xhigh")
+        self.assertTrue(forwarded["chat_template_kwargs"]["enable_thinking"])
+        self.assertNotIn("thinking_budget_tokens", forwarded)
+        rec = eventually(lambda: next((x for x in self.records() if x["phase"] == "completed"), None))
+        self.assertEqual(rec["reasoning_level"], "deep")
+        self.assertEqual(rec["effort"], "xhigh")
+
+    def test_abstract_deep_profile_uses_budget_when_native_effort_is_absent(self):
+        config = self.get("/manager/config")
+        model = next(x for x in config["models"] if x["id"] == "test-model")
+        model.update(
+            reasoning_capability="toggle",
+            reasoning_efforts=[],
+            reasoning_default_effort="",
+            reasoning_budget_supported=True,
+            reasoning_toggle_keys=["enable_thinking"],
+            reasoning_detection="legacy",
+        )
+        profile = next(x for x in config["profiles"] if x["id"] == "coding")
+        profile.update(thinking_mode="on", reasoning_level="deep", budget_mode="auto", max_tokens=4096)
+        response = self.api("PUT", "/manager/config", json=config)
+        self.assertEqual(response.status_code, 200, response.text)
+        r = self.completion()
+        self.assertEqual(r.status_code, 200, r.text)
+        forwarded = self.events("post")[-1]["body"]
+        self.assertNotIn("reasoning_effort", forwarded)
+        self.assertTrue(forwarded["chat_template_kwargs"]["enable_thinking"])
+        self.assertGreater(forwarded["thinking_budget_tokens"], 0)
+        self.assertLess(forwarded["thinking_budget_tokens"], 4096)
+        rec = eventually(lambda: next((x for x in self.records() if x["phase"] == "completed"), None))
+        self.assertEqual(rec["reasoning_level"], "deep")
+        self.assertIsNone(rec["effort"])
+        self.assertGreater(rec["thinking_budget"], 0)
     def test_client_reasoning_override_skips_classifier(self):
         profiles = copy.deepcopy(self.config["profiles"])
         profiles[0]["thinking_mode"] = "auto"
