@@ -560,7 +560,7 @@ def inspect_gguf_capabilities(path_value: str, _include_split_shards: bool = Tru
             total = int(match.group(2))
             base = path.name[:match.start()]
             for index in range(2, total + 1):
-                shard = path.with_name(f"{base}-{index:05d}-of-{total:05d}.gguf")
+                shard = path.with_name(f"{base}-{index:05d}-of-{total:05d}{path.suffix}")
                 if not shard.is_file():
                     continue
                 part = inspect_gguf_capabilities(str(shard), _include_split_shards=False)
