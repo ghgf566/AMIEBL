@@ -556,6 +556,38 @@ def message_text(message):
     return ""
 
 
+ABSTRACT_REASONING_LEVELS = ("light", "balanced", "deep", "extreme")
+ABSTRACT_REASONING_TARGET = {"light": 1, "balanced": 2, "deep": 3, "extreme": 5}
+AUTO_REASONING_BUDGET_RATIO = {"light": 0.15, "balanced": 0.30, "deep": 0.50, "extreme": 0.70}
+
+
+def map_native_reasoning_effort(level: str, supported: list[str]) -> str | None:
+    supported = [x for x in REASONING_EFFORT_ORDER if x in supported]
+    if not supported:
+        return None
+    target = ABSTRACT_REASONING_TARGET.get(level, 2)
+    # Prefer the deeper option on an equal-distance tie. This makes
+    # "deep" map to xhigh on models exposing low / medium / xhigh.
+    return min(
+        supported,
+        key=lambda x: (abs(REASONING_EFFORT_ORDER.index(x) - target), -REASONING_EFFORT_ORDER.index(x)),
+    )
+
+
+def auto_reasoning_budget(level: str, max_budget: int) -> int:
+    ratio = AUTO_REASONING_BUDGET_RATIO.get(level, 0.30)
+    return max(0, min(max_budget, int(round(max_budget * ratio))))
+
+
+def apply_reasoning_toggle(kwargs: dict, toggle_keys: list[str], enabled: bool) -> dict:
+    result = dict(kwargs)
+    for key in toggle_keys:
+        if key in ("enable_thinking", "thinking"):
+            result[key] = enabled
+        elif key == "add_nothink_token":
+            result[key] = not enabled
+    return result
+
 class CancelledRequest(Exception):
     pass
 
@@ -1123,7 +1155,7 @@ class Manager:
                   "profile_name": profile["name"], "phase": "queued", "started_at": utc(), "finished_at": None,
                   "elapsed_seconds": 0, "first_token_seconds": None, "classifier_seconds": None,
                   "prompt_tokens": None, "cached_tokens": None, "generated_tokens": None, "thinking_tokens": None,
-                  "prompt_tps": None, "generation_tps": None, "prompt_progress": None, "effort": None,
+                  "prompt_tps": None, "generation_tps": None, "prompt_progress": None, "reasoning_level": None, "effort": None,
                   "thinking_budget": None, "max_tokens": None, "decision": None, "error": None, "cancel_confirmed": False}
         ticket = Ticket(copy.deepcopy(body), model, profile, headers, record)
         ticket.response = asyncio.get_running_loop().create_future()
@@ -1204,7 +1236,7 @@ class Manager:
         ticket.record["phase"] = "classifying"
         started = time.monotonic()
         p = ticket.profile
-        decision = {"thinking": True, "effort": p["effort"], "budget": p["thinking_budget"]}
+        decision = {"thinking": True, "level": p["reasoning_level"]}
 
         user_text = ""
         for message in reversed(ticket.body["messages"]):
@@ -1231,7 +1263,7 @@ class Manager:
         if has_complex:
             ticket.record["decision"] = "自動判斷：需要思考"
         elif has_simple:
-            decision = {"thinking": False, "effort": p["effort"], "budget": 0}
+            decision = {"thinking": False, "level": p["reasoning_level"]}
             ticket.record["decision"] = "自動判斷：直接回答"
         else:
             ticket.record["decision"] = "自動判斷：採用模式預設"
@@ -1275,24 +1307,68 @@ class Manager:
                     body["chat_template_kwargs"] = kwargs
             ticket.record.update(effort=effort, thinking_budget=budget)
             return body
-        if not model["reasoning_supported"] or p["thinking_mode"] == "model":
-            ticket.record["decision"] = "跟隨模型預設"
+        capability = model.get("reasoning_capability", "unknown")
+        if capability in ("none", "unknown") or p["thinking_mode"] == "model":
+            ticket.record["decision"] = "跟隨模型預設" if p["thinking_mode"] == "model" else "此模型未提供可控制的思考能力"
             return body
-        decision = {"thinking": p["thinking_mode"] != "off", "effort": p["effort"], "budget": p["thinking_budget"]}
+
+        decision = {"thinking": p["thinking_mode"] != "off", "level": p["reasoning_level"]}
         if p["thinking_mode"] == "auto":
             decision = await self.classify(ticket)
         else:
             ticket.record["decision"] = "固定開啟思考" if decision["thinking"] else "固定關閉思考"
-        supported = model["reasoning_efforts"]
-        if supported and decision["effort"] not in supported:
-            ranks = ["low", "medium", "high", "xhigh"]
-            candidates = [x for x in supported if ranks.index(x) <= ranks.index(decision["effort"])]
-            decision["effort"] = candidates[-1] if candidates else supported[0]
-        budget = min(decision["budget"], max_budget) if decision["thinking"] else 0
-        body["chat_template_kwargs"] = {**kwargs, "enable_thinking": decision["thinking"]}
-        body["thinking_budget_tokens"] = budget
-        body["reasoning_effort"] = decision["effort"] if decision["thinking"] else "none"
-        ticket.record.update(effort=body["reasoning_effort"], thinking_budget=budget)
+
+        # Always-reasoning templates cannot safely be forced off. Respect the
+        # model's own contract rather than injecting an unsupported switch.
+        if capability == "always" and not decision["thinking"]:
+            ticket.record["decision"] = "模型不支援關閉思考，已跟隨模型預設"
+            ticket.record["reasoning_level"] = decision["level"]
+            return body
+
+        enabled = bool(decision["thinking"])
+        level = decision["level"]
+        ticket.record["reasoning_level"] = level
+        supported_efforts = model.get("reasoning_efforts") or []
+        native_effort = map_native_reasoning_effort(level, supported_efforts) if enabled else None
+
+        # Apply the exact toggle variables declared by the model template.
+        toggle_keys = model.get("reasoning_toggle_keys") or []
+        if capability == "toggle":
+            kwargs = apply_reasoning_toggle(kwargs, toggle_keys, enabled)
+            if kwargs:
+                body["chat_template_kwargs"] = kwargs
+
+        if not enabled:
+            # llama.cpp treats reasoning_effort=none as a universal request to
+            # disable reasoning, while template-specific kwargs above cover
+            # DeepSeek/GLM/Qwen variants that expose their own switch.
+            body["reasoning_effort"] = "none"
+            if model.get("reasoning_budget_supported", False):
+                body["thinking_budget_tokens"] = 0
+            ticket.record.update(effort="none", thinking_budget=0)
+            return body
+
+        budget = None
+        if p.get("budget_mode", "auto") == "custom":
+            budget = min(int(p["thinking_budget"]), max_budget)
+        elif not native_effort and model.get("reasoning_budget_supported", False):
+            # Models without native effort levels (for example many hybrid
+            # thinking templates) use a token budget as AMIEBL's fallback
+            # implementation of light/balanced/deep/extreme.
+            budget = auto_reasoning_budget(level, max_budget)
+
+        if native_effort:
+            body["reasoning_effort"] = native_effort
+        if budget is not None and model.get("reasoning_budget_supported", False):
+            body["thinking_budget_tokens"] = budget
+
+        ticket.record.update(effort=native_effort, thinking_budget=budget)
+        if native_effort:
+            ticket.record["decision"] = (ticket.record.get("decision") or "思考已啟用") + f"；映射模型 Effort={native_effort}"
+        elif budget is not None:
+            ticket.record["decision"] = (ticket.record.get("decision") or "思考已啟用") + f"；以 Budget={budget} 模擬強度"
+        else:
+            ticket.record["decision"] = (ticket.record.get("decision") or "思考已啟用") + "；模型僅提供思考開關"
         return body
 
     async def process_ticket(self, ticket):
