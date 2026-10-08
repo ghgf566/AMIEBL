@@ -43,7 +43,7 @@ Ollama 重視快速上手，LM Studio 提供完整的圖形化本地模型體驗
 
 - 匯入 GGUF，搜尋模型資料夾，偵測模型與 projector。
 - 調整 **Context、CPU 執行緒、GPU Offload**，或使用 GPU 層數自動估算／顯存預留。
-- 選擇 KV Cache 格式（\`f16\`、\`q8_0\`、\`q4_0\`）。
+- 選擇 KV Cache 格式（`f16`、`q8_0`、`q4_0`）。
 - 調整 Temperature、Top P、Top K、Min P。
 - 為相容模型設定視覺 projector（mmproj）、MTP／外部 Draft 模型。
 - 顯示已保存設定與已載入引擎設定的差異；需重新載入的選項不會冒充立即生效。
@@ -65,11 +65,11 @@ AMIEBL 會根據 GGUF Chat Template、模型 metadata，以及模型載入後可
 透過總覽的 **「同步至 VS Code」**，AMIEBL 可協助：
 
 1. 將已登錄的**實體模型**同步至 VS Code 模型選擇器。
-2. 為 Profile 建立或更新 \`.agent.md\` 檔案，以 \`AMIEBL_PROFILE:<id>\` 標記選擇模式。
+2. 為 Profile 建立或更新 `.agent.md` 檔案，以 `AMIEBL_PROFILE:<id>` 標記選擇模式。
 3. 依模型 Context 配置 VS Code 的輸入／輸出 Token 額度。
 4. 在寫入前備份受影響的 VS Code 設定及 Agent 檔案，盡量保留使用者的其他 Provider 與手動內容。
 
-同步後請**重新載入 VS Code 視窗**。在 Agent 模式下選擇本地模型及對應的使用模式。如果看不到自訂模型，請確認 VS Code 的 \`chat.agentHost.byokModels.enabled\` 已開啟。
+同步後請**重新載入 VS Code 視窗**。在 Agent 模式下選擇本地模型及對應的使用模式。如果看不到自訂模型，請確認 VS Code 的 `chat.agentHost.byokModels.enabled` 已開啟。
 
 ### API Proxy、模型按需載入與任務紀錄
 
@@ -77,9 +77,9 @@ AMIEBL 提供本機 OpenAI-compatible API，由後端協調 llama.cpp 的模型�
 
 預設 API：
 
-\`\`\`text
+```text
 http://127.0.0.1:8080/v1/chat/completions
-\`\`\`
+```
 
 透過管理器可查看排隊、載入、提示詞處理、思考、生成、取消與錯誤等階段，以及可取得的 Token／速度資料。無法取得的指標不會以虛構數字代替。
 
@@ -95,7 +95,7 @@ http://127.0.0.1:8080/v1/chat/completions
 
 | 形式 | 說明 |
 | --- | --- |
-| **Portable** | 解壓縮後執行 \`LocalModelManager.exe\`；設定及執行資料可保存在發行包的 \`data\` 目錄 |
+| **Portable** | 解壓縮後執行 `LocalModelManager.exe`；設定及執行資料可保存在發行包的 `data` 目錄 |
 | **Setup.exe** | 使用 Inno Setup 製作的 Windows 使用者層級安裝程式；程式與使用者資料分開保存 |
 
 **目前沒有 MSI 打包流程。** 預設發行包不附大型 GGUF 模型。
@@ -112,7 +112,7 @@ http://127.0.0.1:8080/v1/chat/completions
 
 ### 使用步驟
 
-1. 解壓縮 Portable 或執行 Setup.exe，開啟 \`LocalModelManager.exe\`。
+1. 解壓縮 Portable 或執行 Setup.exe，開啟 `LocalModelManager.exe`。
 2. 進入**模型庫**，選擇 GGUF 檔案或掃描模型資料夾。
 3. 配合硬體資源調整 Context、GPU Offload、KV Cache 等參數。
 4. 進入**使用模式**，選取或建立適合任務的 Profile。
@@ -123,9 +123,9 @@ http://127.0.0.1:8080/v1/chat/completions
 
 ## 設定、資料與隱私
 
-- **Portable：** 發行包具有 \`portable.flag\` 時，預設使用同層的 \`data/\`。
-- **安裝版：** 預設使用 \`%LOCALAPPDATA%\LocalModelManager\`。
-- 可使用 \`--data-dir\` 指定隔離的資料目錄，適用於測試。
+- **Portable：** 發行包具有 `portable.flag` 時，預設使用同層的 `data/`。
+- **安裝版：** 預設使用 `%LOCALAPPDATA%\LocalModelManager`。
+- 可使用 `--data-dir` 指定隔離的資料目錄，適用於測試。
 - 一般任務紀錄不預設保存完整提示詞及回答；若開啟完整請求記錄，請注意敏感資料可能寫入日誌。
 - 設定可匯出／匯入；執行前後請留意備份與路徑。
 - 服務預設只使用本機 loopback。**不要將 AMIEBL API 直接開放到公網或不受信任的網路。** 其他 Agent 客戶端的資料處理方式不在 AMIEBL 的控制範圍內。
@@ -134,7 +134,7 @@ http://127.0.0.1:8080/v1/chat/completions
 
 ## 專案架構
 
-\`\`\`text
+```text
 VS Code Agent / OpenAI-compatible 客戶端
                    |
                    v
@@ -149,17 +149,17 @@ VS Code Agent / OpenAI-compatible 客戶端
                 GGUF 模型
 
   WinUI 3 桌面介面 --> AMIEBL 管理服務
-\`\`\`
+```
 
 | 目錄 | 內容 |
 | --- | --- |
-| \`desktop-winui/\` | 原生 WinUI 3 桌面前端（預設） |
-| \`desktop-core/\` | 共用 ViewModel、草稿編輯、設定儲存與衝突處理 |
-| \`desktop-platform/\` | Windows 整合、後端啟動、背景程序及系統匣 |
-| \`desktop/\` | 保留的 WPF 對照／備用前端 |
-| \`backend/\` | FastAPI、llama.cpp 管理、請求處理、VS Code 同步 |
-| \`tests/\` | Python 整合測試、.NET 核心測試及桌面回歸驗證 |
-| \`installer/\` | Inno Setup 與 PowerShell 安裝／解除安裝腳本 |
+| `desktop-winui/` | 原生 WinUI 3 桌面前端（預設） |
+| `desktop-core/` | 共用 ViewModel、草稿編輯、設定儲存與衝突處理 |
+| `desktop-platform/` | Windows 整合、後端啟動、背景程序及系統匣 |
+| `desktop/` | 保留的 WPF 對照／備用前端 |
+| `backend/` | FastAPI、llama.cpp 管理、請求處理、VS Code 同步 |
+| `tests/` | Python 整合測試、.NET 核心測試及桌面回歸驗證 |
+| `installer/` | Inno Setup 與 PowerShell 安裝／解除安裝腳本 |
 
 架構與隔離測試細節見 [DESKTOP-ARCHITECTURE.md](DESKTOP-ARCHITECTURE.md)。
 
@@ -167,7 +167,7 @@ VS Code Agent / OpenAI-compatible 客戶端
 
 需要 Windows x64、.NET 10 SDK、Windows App SDK 的 NuGet 相依套件、可用的 Python 環境，以及供實際推理使用的 llama.cpp Windows 版本。
 
-\`\`\`powershell
+```powershell
 git clone https://github.com/ghgf566/AMIEBL.git
 cd AMIEBL
 
@@ -179,25 +179,25 @@ cd AMIEBL
 
 # WPF 對照版本
 .\build.ps1 -Frontend WPF -OutputDirectory 'C:\AMIEBL-WPF'
-\`\`\`
+```
 
 ### 製作 Portable 與 Setup.exe
 
-\`\`\`powershell
+```powershell
 # Portable：指定已準備好的 llama.cpp 路徑
 .\package.ps1 -LlamaRoot 'C:\Tools\llama.cpp' -PythonHome 'C:\Python314' -SelfContained -OutputDirectory 'C:\AMIEBL-release'
 
 # 如果安裝 Inno Setup 6，再加上 -BuildInstaller 製作 Setup.exe
 .\package.ps1 -LlamaRoot 'C:\Tools\llama.cpp' -PythonHome 'C:\Python314' -SelfContained -BuildInstaller -OutputDirectory 'C:\AMIEBL-setup-release'
-\`\`\`
+```
 
-\`-PythonHome\` 可省略；\`-ModelDirectory\` 可選擇將模型納入 Portable，否則預設不複製大容量模型。為避免誤刪資料，打包器不會覆蓋已存在的 Portable 輸出資料夾。
+`-PythonHome` 可省略；`-ModelDirectory` 可選擇將模型納入 Portable，否則預設不複製大容量模型。為避免誤刪資料，打包器不會覆蓋已存在的 Portable 輸出資料夾。
 
 詳見 [安裝與解除安裝說明](installer/README.md)。
 
 ## 測試
 
-\`\`\`powershell
+```powershell
 # Python 單元與整合測試
 python -m unittest discover -s tests -p "test_*.py" -v
 
@@ -209,7 +209,7 @@ dotnet run --project tests/DesktopPlatformRegression -c Release
 
 # 驗證實際編譯的桌面執行檔（隔離測試資料）
 .\tests\Test-Desktop.ps1 -FrontendDirectory 'C:\AMIEBL-build'
-\`\`\`
+```
 
 桌面 smoke test 會使用專用資料目錄，不需要載入真實 GGUF；但無法替代不同 Windows 版本、硬體、模型，以及真實 VS Code Agent 使用情境的驗收。
 
