@@ -112,9 +112,9 @@ def preview(config, data_dir):
             "api_url": f"http://127.0.0.1:{config['api_port']}/v1/chat/completions",
             "models_file": str(models_file), "agents_dir": str(agents_dir),
             "default_model_id": config["default_model_id"],
-            "profiles": [{"id": p["id"], "name": p["name"], "agent_name": p.get("agent_name") or p["name"], "agent_sync_mode": p.get("agent_sync_mode", "preserve"), "max_tokens": p["max_tokens"]}
+            "profiles": [{"id": p["id"], "name": p["name"], "agent_name": agent_display_name(p), "agent_sync_mode": p.get("agent_sync_mode", "preserve"), "max_tokens": p["max_tokens"]}
                          for p in config["profiles"]],
-            "summary": f"將在 VS Code 登錄 {model_count} 個實體模型，並處理 {agent_count} 個 Agent。預設只維護 AMIEBL 模式標記並保留 VS Code 手動修改；設為完整管理的 Agent 才會由 GUI 覆寫。原始設定會先備份；完成後需要重新載入 VS Code 視窗。\nVS Code 輸出預留最多為 Context 的四分之一；不修改 Profile 上限。\n{limits}",
+            "summary": f"將在 VS Code 登錄 {model_count} 個實體模型，並處理 {agent_count} 個 Agent。預設同步模式名稱與 AMIEBL 模式標記並保留 VS Code 手動修改；設為完整管理的 Agent 才會由 GUI 覆寫。原始設定會先備份；完成後需要重新載入 VS Code 視窗。\nVS Code 輸出預留最多為 Context 的四分之一；不修改 Profile 上限。\n{limits}",
             "message": "VS Code 模型清單只會顯示實體模型；使用模式由 .agent.md 中的 AMIEBL profile 標記選擇。Agent 不固定 customendpoint model，請在 Agent 視窗的模型選擇器選取本機模型。"}
 
 
@@ -158,23 +158,45 @@ def update_frontmatter(source, model_name=None):
     return "---\n" + header.replace("\r\n", "\n") + "\n---" + source[match.end():]
 
 
-def preserve_agent_profile_marker(source, profile_id):
-    """Preserve the user's VS Code agent settings and only maintain AMIEBL's marker."""
+def agent_display_name(profile):
+    return profile.get("name") or profile.get("agent_name") or profile["id"]
+
+
+def sync_agent_name(source, display_name):
+    match = re.match(r"^---[ \t]*\r?\n(.*?)\r?\n---(?=\r?\n|$)", source, re.S)
+    if not match:
+        raise ValueError("既有 Agent 缺少有效 YAML 標頭，已停止同步。")
+    header = match.group(1)
+    if re.search(r"^name:[ \t]*(?:[|>].*|)\r?$", header, re.M):
+        raise ValueError("既有 Agent 名稱使用多行 YAML，請先改為單行再同步。")
+    line = "name: " + json.dumps(display_name, ensure_ascii=False)
+    if re.search(r"^name:", header, re.M):
+        header = re.sub(r"^name:[^\r\n]*", lambda _: line, header, flags=re.M)
+    else:
+        header = line + ("\r\n" if "\r\n" in source else "\n") + header
+    return source[:match.start(1)] + header + source[match.end(1):]
+
+
+def preserve_agent_profile_marker(source, profile_id, display_name=None):
+    """Sync display name and profile marker, preserving tools and instructions."""
     source = source.lstrip("\ufeff")
+    if display_name is not None:
+        source = sync_agent_name(source, display_name)
     marker = f"AMIEBL_PROFILE:{profile_id}"
-    pattern = r"(?mi)^[ \t]*AMIEBL_PROFILE\s*:\s*[A-Za-z0-9_-]+[ \t]*$"
+    pattern = r"(?mi)^[ \t]*AMIEBL_PROFILE\s*:\s*[A-Za-z0-9_-]+[ \t]*(?=\r?$)"
     if re.search(pattern, source):
         return re.sub(pattern, marker, source, count=1)
     match = re.match(r"^---\s*\r?\n.*?\r?\n---(?=\r?\n|$)", source, re.S)
     if not match:
         raise ValueError("既有 VS Code Agent 缺少有效 YAML 標頭；為避免覆蓋手動設定，已停止同步。")
-    return source[:match.end()] + "\n\n" + marker + source[match.end():]
+    newline = "\r\n" if "\r\n" in source else "\n"
+    return source[:match.end()] + newline * 2 + marker + source[match.end():]
 
 def render_agent(profile):
     tools = json.dumps(profile.get("agent_tools", []), ensure_ascii=False)
     header = [
         "---",
-        "name: " + json.dumps(profile.get("agent_name") or profile.get("name") or profile["id"], ensure_ascii=False),
+        "name: " + json.dumps(agent_display_name(profile), ensure_ascii=False),
         "description: " + json.dumps(profile.get("agent_description", ""), ensure_ascii=False),
         "tools: " + tools,
         "agents: []",
@@ -221,8 +243,8 @@ def apply(config, data_dir):
         filename = f"local-{profile_id}.agent.md" if profile_id in {"quick-chat", "coding", "deep-coding"} else f"lmm-{profile_id}.agent.md"
         agent_path = agents_dir / filename
         if agent_path.exists() and profile.get("agent_sync_mode", "preserve") == "preserve":
-            source = agent_path.read_text(encoding="utf-8-sig")
-            content = preserve_agent_profile_marker(source, profile_id)
+            source = agent_path.read_bytes().decode("utf-8-sig")
+            content = preserve_agent_profile_marker(source, profile_id, agent_display_name(profile))
         else:
             content = render_agent(profile)
         outputs.append((agent_path, content))
@@ -250,4 +272,4 @@ def apply(config, data_dir):
     return {"ok": True, "backups": backups, "model_count": len(entries),
             "agent_count": len(outputs) - 1,
             "agents": [str(p) for p, _ in outputs[1:]], "requires_reload": True,
-            "message": "已備份並更新 VS Code 設定。模型選單只保留實體模型；預設同步模式只維護 AMIEBL_PROFILE 標記並保留既有 Agent 的 tools、prompt 與其他手動設定。只有設為「由 AMIEBL 完整管理」的 Agent 會被 GUI 覆寫。請重新載入 VS Code。"}
+            "message": "已備份並更新 VS Code 設定。模型選單只保留實體模型；預設同步模式同步模式名稱與 AMIEBL_PROFILE 標記並保留既有 Agent 的 tools、prompt 與其他手動設定。只有設為「由 AMIEBL 完整管理」的 Agent 會被 GUI 覆寫。請重新載入 VS Code。"}

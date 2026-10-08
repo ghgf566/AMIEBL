@@ -72,7 +72,8 @@ public sealed partial class MainWindow
         "budget_mode"=>"自動預算依偵測能力決定；自訂會送出明確 token 上限。請同時確認模型庫的 Thinking 支援說明。",
         "thinking_budget"=>"0 嘗試立即結束思考。上限能否真正截斷取決於 llama.cpp 的思考 parser；原生 Effort 可與此上限並用。",
         "max_tokens"=>"整次生成的 token 上限，包含思考與最終回答；與 Context 容量不同。",
-        "agent_sync_mode"=>"保留模式保護手動工具與指令；管理模式由 AMIEBL 同步。連接 VS Code 前仍會預覽變更。",
+        "name" when collection=="profiles"=>"此名稱也會同步成 VS Code Agent 的顯示名稱；改名後請從總覽按「同步至 VS Code」。",
+        "agent_sync_mode"=>"保留模式保護手動工具與指令；管理模式由 AMIEBL 同步。同步至 VS Code 前仍會預覽變更。",
         "model_dirs"=>"掃描模型時搜尋的資料夾，也可從模型庫管理。取消登錄不會移動或刪除實體 GGUF。",
         "log_request_bodies"=>"開啟後可能記錄提示詞與請求內容，只建議需要除錯時使用。",
         _=>""

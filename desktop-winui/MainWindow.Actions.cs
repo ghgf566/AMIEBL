@@ -80,7 +80,7 @@ public sealed partial class MainWindow
     private async Task ConnectVSCode()
     {
         if(!await LeaveEditor())return;var preview=await api!.Get("/manager/vscode/preview");
-        if(await Confirm(J.S(preview,"summary","更新 VS Code 設定並備份既有內容？"),"連接 VS Code")){var result=await api.Post("/manager/vscode/apply");Message(J.S(result,"message","已更新，請重新載入 VS Code 視窗。"));}
+        if(await Confirm(J.S(preview,"summary","更新 VS Code 設定並備份既有內容？"),"同步至 VS Code")){var result=await api.Post("/manager/vscode/apply");Message(J.S(result,"message","已更新，請重新載入 VS Code 視窗。"));}
     }
     private async Task Export()
     {

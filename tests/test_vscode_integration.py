@@ -63,6 +63,42 @@ class IntegrationTests(unittest.TestCase):
         self.assertEqual(exported['maxInputTokens'], entry['maxInputTokens'])
         self.assertEqual(exported['maxOutputTokens'], entry['maxOutputTokens'])
 
+    def test_chinese_profile_name_updates_existing_agent_without_replacing_tools(self):
+        profile = self.config['profiles'][0]
+        profile.update(name='全功能模式', agent_name='Local Quick Chat', agent_sync_mode='preserve')
+        agent = self.agents / 'local-coding.agent.md'
+        original = '---\r\nname: Quick Chat\r\ntools: [execute, custom/tool]\r\ncustom-option: keep-me\r\n---\r\n\r\nAMIEBL_PROFILE:coding\r\n\r\nKeep my instructions.\r\n'
+        agent.write_bytes(original.encode())
+        snapshot = copy.deepcopy(self.config)
+        integration.apply(self.config, self.root / 'data')
+        actual = agent.read_bytes().decode()
+        self.assertEqual(actual, original.replace('name: Quick Chat', 'name: "全功能模式"'))
+        self.assertEqual(self.config, snapshot)
+        self.assertEqual(integration.preview(self.config, self.root / 'data')['profiles'][0]['agent_name'], '全功能模式')
+        profile['name'] = '全功能模式二'
+        integration.apply(self.config, self.root / 'data')
+        self.assertIn('name: "全功能模式二"', agent.read_text(encoding='utf-8'))
+        self.assertEqual(len(list(self.agents.glob('*.agent.md'))), 1)
+
+    def test_new_and_managed_agents_use_profile_name_over_legacy_agent_name(self):
+        profile = self.config['profiles'][0]
+        profile.update(name='全功能模式', agent_name='Local Quick Chat')
+        for mode in ('preserve', 'managed'):
+            with self.subTest(mode=mode):
+                profile['agent_sync_mode'] = mode
+                integration.apply(self.config, self.root / 'data')
+                self.assertIn('name: "全功能模式"', (self.agents / 'local-coding.agent.md').read_text(encoding='utf-8'))
+
+    def test_multiline_agent_name_fails_without_partial_writes(self):
+        self.models.write_text('[]', encoding='utf-8')
+        agent = self.agents / 'local-coding.agent.md'
+        source = '---\nname: |\n  My custom name\ntools: [read]\n---\nMy prompt.\n'
+        agent.write_text(source, encoding='utf-8')
+        with self.assertRaises(ValueError):
+            integration.apply(self.config, self.root / 'data')
+        self.assertEqual(self.models.read_text(encoding='utf-8'), '[]')
+        self.assertEqual(agent.read_text(encoding='utf-8'), source)
+
     def test_jsonc_preserves_strings_and_strips_comments(self):
         source = '[ // a comment\n {"url":"http://localhost", "secret":"a/*b*/,]\\\"",},]'
         result = integration.read_jsonc(source)

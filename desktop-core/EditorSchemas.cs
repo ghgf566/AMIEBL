@@ -27,7 +27,7 @@ public static class EditorSchemas
         Choice("budget_mode", "思考預算", "auto","custom"),
         Int("thinking_budget", "自訂思考 token 上限（需引擎支援）",0,1048576, enabled: d => J.S(d,"budget_mode")=="custom" && J.S(d,"thinking_mode") is "auto" or "on"),
         Int("max_tokens", "整次生成上限（思考＋回答）",256,1048576),
-        Choice("agent_sync_mode", "VS Code Agent 同步", "preserve","managed"), new("agent_name", "Agent 名稱"),
+        Choice("agent_sync_mode", "VS Code Agent 同步", "preserve","managed"),
         new("agent_description", "Agent 描述"), new("agent_tools", "Agent 工具（逗號分隔）"), new("agent_instructions", "Agent 指令", FieldKind.Multiline)
     ];
     public static FieldSpec[] System(string[] profiles) => [

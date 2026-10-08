@@ -74,7 +74,7 @@ public sealed partial class MainWindow
         if (collection=="models") vm.SelectedModelId=id; else vm.SelectedProfileId=id;
         var data=J.A(vm.Config,collection).OfType<JsonObject>().First(x=>J.S(x,"id")==id);
         editor=new(vm,collection,data,collection=="models" ? EditorSchemas.Model(vm.Profiles.Select(x=>x.Id).ToArray()) : EditorSchemas.Profile);
-        if (entityEditor is not null) entityEditor.Content=Scroll(BuildForm(editor));
+        if (entityEditor is not null) entityEditor.Content=BuildForm(editor);
     }
     private sealed record ChoiceOption(string Id,string Label);
     private ChoiceOption[] ChoiceOptions(FieldSpec spec)
@@ -143,20 +143,23 @@ public sealed partial class MainWindow
             foreach (var (spec,block) in blocks) if (spec.Enabled is not null) ((FrameworkElement)block).Visibility=spec.Enabled(preview) ? Visibility.Visible : Visibility.Collapsed;
         }
         draft.PropertyChanged += (_, e)=> { if(e.PropertyName==nameof(draft.Preview)) Dependencies(); }; Dependencies();
-        panel.Children.Insert(0,Row(Action("儲存設定",SaveEditor),Action("重新讀取",async ()=>
+        var saveActions=Row(Action("儲存設定",SaveEditor),Action("重新讀取",async ()=>
         {
             if(vm.Editor.IsDirty && !await Confirm("捨棄尚未儲存的修改，重新讀取已保存設定？"))return;
             await vm.RefreshConfig();
             if(draft.Collection=="system")ShowPage("系統");
             else {PopulateList(draft.Collection);OpenEditor(draft.Collection,draft.Id);RestoreEntitySelection(draft.Collection);}
-        })));
+        }));
         if (draft.Collection=="models")
         {
             panel.Children.Add(Row(Action("載入／重新載入",async ()=> { await SaveEditor(); await api!.Post("/manager/load",new JsonObject { ["model_id"]=draft.Id }); await Poll(); }),Action("設為預設",async ()=> { await SaveEditor(); await vm.SaveConfig(c=>c["default_model_id"]=draft.Id); Message("已設為預設模型。"); }),Action("移除登錄",DeleteEntity)));
 
         }
         else if (draft.Collection=="profiles") panel.Children.Add(Action("刪除此模式",DeleteEntity));
-        return panel;
+        if(draft.Collection=="system") {panel.Children.Add(saveActions);return panel;}
+        var layout=new Grid { RowSpacing=12 };layout.RowDefinitions.Add(new(){Height=new GridLength(1,GridUnitType.Star)});layout.RowDefinitions.Add(new(){Height=GridLength.Auto});
+        editorScroll=Scroll(panel);layout.Children.Add(editorScroll);
+        editorActions=saveActions;Grid.SetRow(saveActions,1);layout.Children.Add(saveActions);return layout;
     }
     private string ModelCapability(string id)
     {
@@ -196,7 +199,7 @@ public sealed partial class MainWindow
     private UIElement BuildSystem()
     {
         editor=new(vm,"system",vm.Config,EditorSchemas.System(vm.Profiles.Select(x=>x.Id).ToArray()));
-        var root=Panel(); root.Children.Add(Row(Action("檢查連線",async ()=>Message((await api!.Get("/manager/connection")).ToJsonString(new JsonSerializerOptions { WriteIndented=true }))),Action("連接 VS Code",ConnectVSCode),Action("匯出設定",Export),Action("匯入設定",Import),Action("完全結束",Exit)));
+        var root=Panel(); root.Children.Add(Row(Action("檢查連線",async ()=>Message((await api!.Get("/manager/connection")).ToJsonString(new JsonSerializerOptions { WriteIndented=true }))),Action("匯出設定",Export),Action("匯入設定",Import),Action("完全結束",Exit)));
         root.Children.Add(Text("資料位置："+host.DataDir)); root.Children.Add(BuildForm(editor)); return Scroll(root);
     }
 }
