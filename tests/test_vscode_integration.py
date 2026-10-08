@@ -47,7 +47,7 @@ class IntegrationTests(unittest.TestCase):
         source = agent.read_text(encoding='utf-8')
         self.assertIn('tools: [execute, custom/tool]', source)
         self.assertIn('Keep these instructions.', source)
-        self.assertNotRegex(source, r"(?m)^model:\s*")
+        self.assertIn('model: "old custom endpoint"', source)
         self.assertEqual(len(result['backups']), 2)
         self.assertEqual(Path(result['backups'][1]).read_text(encoding='utf-8'), original)
         self.assertNotIn('retain-me', json.dumps(result))
