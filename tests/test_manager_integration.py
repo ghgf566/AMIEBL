@@ -422,6 +422,37 @@ class ManagerIntegration(unittest.TestCase):
         rec = eventually(lambda: next((x for x in self.records() if x["phase"] == "completed"), None))
         self.assertEqual(rec["thinking_budget"], 321)
         self.assertIn("尚未確認", rec["decision"])
+    def test_thinking_mode_template_uses_native_toggle_without_synthetic_effort(self):
+        config = self.get("/manager/config")
+        model = next(x for x in config["models"] if x["id"] == "test-model")
+        model.update(
+            reasoning_capability="toggle",
+            reasoning_efforts=[],
+            reasoning_default_effort="",
+            reasoning_budget_supported=False,
+            reasoning_toggle_keys=["thinking_mode"],
+            reasoning_detection="legacy",
+        )
+        profile = next(x for x in config["profiles"] if x["id"] == "coding")
+        profile.update(thinking_mode="off", reasoning_level="balanced", budget_mode="auto")
+        response = self.api("PUT", "/manager/config", json=config)
+        self.assertEqual(response.status_code, 200, response.text)
+        r = self.completion()
+        self.assertEqual(r.status_code, 200, r.text)
+        forwarded = self.events("post")[-1]["body"]
+        self.assertEqual(forwarded["chat_template_kwargs"]["thinking_mode"], "disabled")
+        self.assertNotIn("reasoning_effort", forwarded)
+
+    def test_client_thinking_mode_and_strength_overrides_skip_profile_policy(self):
+        profiles = copy.deepcopy(self.get("/manager/config")["profiles"])
+        profiles[0]["thinking_mode"] = "auto"
+        self.save(profiles=profiles)
+        r = self.completion(chat_template_kwargs={"thinking_mode": "adaptive", "reasoning_strength": "low"})
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(self.events("classifier"), [])
+        forwarded = self.events("post")[-1]["body"]
+        self.assertEqual(forwarded["chat_template_kwargs"]["thinking_mode"], "adaptive")
+        self.assertEqual(forwarded["chat_template_kwargs"]["reasoning_strength"], "low")
     def test_client_reasoning_override_skips_classifier(self):
         profiles = copy.deepcopy(self.get("/manager/config")["profiles"])
         profiles[0]["thinking_mode"] = "auto"
