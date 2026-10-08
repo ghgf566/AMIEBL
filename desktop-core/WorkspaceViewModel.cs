@@ -45,11 +45,12 @@ public sealed class WorkspaceViewModel : ObservableObject
     private readonly SemaphoreSlim mutations = new(1, 1);
     private JsonObject config = new(), status = new();
     private bool busy;
+    private long configRevision;
     public IManagerApi? Api { get; set; }
     public EditorState Editor { get; } = new();
     public ObservableCollection<ModelSettings> Models { get; } = new();
     public ObservableCollection<ProfileSettings> Profiles { get; } = new();
-    public JsonObject Config { get => config; set { config = value.DeepClone().AsObject(); UpdateRows(); Changed(); } }
+    public JsonObject Config { get => config; set { configRevision++; config = value.DeepClone().AsObject(); UpdateRows(); Changed(); } }
     public JsonObject Status { get => status; set { status = value.DeepClone().AsObject(); Changed(); Changed(nameof(ApplicationState)); } }
     public bool IsBusy { get => busy; private set { busy = value; Changed(); } }
     public string ApplicationState => J.B(Status, "pending_restart") ? "已儲存，等待管理器重啟" : J.B(Status, "pending_model_reload") ? "已儲存，等待模型重新載入" : "已儲存；引擎載入設定無待處理差異";
@@ -66,6 +67,13 @@ public sealed class WorkspaceViewModel : ObservableObject
     {
         for (int i = 0; i < next.Count; i++) { if (i < rows.Count) rows[i] = next[i]; else rows.Add(next[i]); }
         while (rows.Count > next.Count) rows.RemoveAt(rows.Count - 1);
+    }
+    public async Task RefreshConfig()
+    {
+        if (Api is null || IsBusy) return;
+        long revision=configRevision;
+        var refreshed=await Api.Get("/manager/config");
+        if (!IsBusy && configRevision==revision) Config=refreshed;
     }
     public async Task SaveConfig(Action<JsonObject> edit)
     {

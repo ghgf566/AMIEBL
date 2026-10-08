@@ -1,0 +1,17 @@
+<Window x:Class="AMIEBL.WinUI.MainWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Title="AMIEBL — 本機模型管理器">
+  <Grid x:Name="Root" RequestedTheme="Dark"><Grid.Resources><SolidColorBrush x:Key="NavigationViewItemBackgroundSelected" Color="#333333"/><SolidColorBrush x:Key="NavigationViewItemBackgroundSelectedPointerOver" Color="#444444"/><SolidColorBrush x:Key="NavigationViewItemBackgroundSelectedPressed" Color="#555555"/></Grid.Resources>
+    <NavigationView x:Name="Navigation" IsBackButtonVisible="Collapsed" IsSettingsVisible="False" PaneDisplayMode="Left" IsPaneToggleButtonVisible="True" SelectionChanged="Navigate">
+      <NavigationView.PaneHeader><StackPanel Margin="16,20,0,20"><TextBlock Text="AMIEBL" FontSize="24" FontWeight="SemiBold" /><TextBlock Text="你的本機推理工作台" Opacity="0.7" Margin="0,8,0,0"/></StackPanel></NavigationView.PaneHeader>
+      <NavigationView.MenuItems>
+        <NavigationViewItem Content="總覽" Tag="總覽" Icon="Home"/><NavigationViewItem Content="模型庫" Tag="模型庫" Icon="Library"/><NavigationViewItem Content="使用模式" Tag="使用模式" Icon="Edit"/><NavigationViewItem Content="任務與紀錄" Tag="任務與紀錄" Icon="List"/><NavigationViewItem Content="系統" Tag="系統" Icon="Setting"/>
+      </NavigationView.MenuItems>
+      <Grid Margin="28,20,28,20"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+        <TextBlock x:Name="TitleText" FontSize="28" FontWeight="SemiBold" Margin="0,0,0,16"/>
+        <InfoBar x:Name="Notice" Grid.Row="1" IsOpen="False" IsClosable="True" Margin="0,0,0,12"/>
+        <ContentControl x:Name="PageHost" Grid.Row="2" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"/>
+        <TextBlock x:Name="Footer" Grid.Row="3" Opacity="0.7" FontSize="12" Margin="0,14,0,0" TextWrapping="Wrap"/>
+      </Grid>
+    </NavigationView>
+  </Grid>
+</Window>
+

@@ -1,8 +1,13 @@
 ﻿param(
     [string]$OutputDirectory = (Join-Path $PSScriptRoot '..\..\outputs\LocalModelManager'),
+    [ValidateSet("WinUI", "WPF")][string]$Frontend = "WinUI",
     [switch]$SelfContained
 )
 $ErrorActionPreference = 'Stop'
+if ($Frontend -eq 'WinUI') {
+    & (Join-Path $PSScriptRoot 'build-winui.ps1') -OutputDirectory $OutputDirectory -SelfContained:$SelfContained
+    return
+}
 $destination = [IO.Path]::GetFullPath($OutputDirectory)
 New-Item -ItemType Directory -Force -Path $destination | Out-Null
 $project = Join-Path $PSScriptRoot 'desktop\LocalModelManager.csproj'

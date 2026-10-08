@@ -805,6 +805,7 @@ class ManagerIntegration(unittest.TestCase):
         status = self.get("/manager/status")
         self.assertEqual(status["state"], "ready")
         self.assertTrue(status["pending_config"])
+        self.assertEqual(status["loaded_model_settings"]["context"], 8192)
         self.assertEqual(len(self.events("start")), 1)
 
         # Re-loading the same model ID must not be treated as a no-op when
@@ -812,7 +813,10 @@ class ManagerIntegration(unittest.TestCase):
         response = self.api("POST", "/manager/load", json={"model_id": "test-model"})
         self.assertEqual(response.status_code, 200, response.text)
         eventually(lambda: len(self.events("start")) == 2 and self.get("/manager/status")["state"] == "ready")
-        self.assertFalse(self.get("/manager/status")["pending_config"])
+        reloaded = self.get("/manager/status")
+        self.assertFalse(reloaded["pending_config"])
+        self.assertEqual(reloaded["loaded_model_settings"]["context"], 4096)
+        self.assertEqual(reloaded["loaded_model_settings"]["gpu_layers_effective"], -1)
         argv = self.events("start")[-1]["argv"]
         self.assertEqual(argv[argv.index("-c") + 1], "4096")
         self.assertEqual(argv[argv.index("-t") + 1], "3")

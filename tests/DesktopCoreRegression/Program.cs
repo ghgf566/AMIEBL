@@ -22,15 +22,45 @@ await Task.WhenAll(vm.SaveConfig(c => c["first"] = 1), vm.SaveConfig(c => c["sec
 Check(J.I(vm.Config, "first") == 1 && J.I(vm.Config, "second") == 2 && fake.MaxWrites == 1, "Concurrent saves lost updates");
 vm.Editor.IsDirty = true; long revision = vm.Editor.Revision; vm.Editor.IsDirty = true; vm.Editor.Saved(revision);
 Check(vm.Editor.IsDirty, "Save cleared edits made while request was pending");
-Console.WriteLine("PASS: row refresh, unknown fields, failed save, saved/refresh failure, serialized saves, edit revision.");
+var draft = new SettingsEditorViewModel(vm, "models", vm.Model("a")!.Data,
+    new[] { new FieldSpec("name", "Name"), new FieldSpec("context", "Context", FieldKind.Integer, Minimum:512, Maximum:2097152) });
+draft.Field("context").Value = "4096";
+fake.External(c => c["models"]![0]!["name"] = "External name");
+await draft.Save();
+Check(vm.Model("a")!.Name == "External name" && vm.Model("a")!.Context == 4096, "Draft overwrote untouched external setting");
+draft = new SettingsEditorViewModel(vm, "models", vm.Model("a")!.Data,
+    new[] { new FieldSpec("context", "Context", FieldKind.Integer, Minimum:512, Maximum:2097152) });
+draft.Field("context").Value = "2048";
+fake.External(c => c["models"]![0]!["context"] = 1024);
+try { await draft.Save(); throw new Exception("External edit conflict silently overwritten"); }
+catch (InvalidOperationException) { }
+Check(vm.Editor.IsDirty, "Conflict discarded draft");
+var arrayField = new SettingFieldViewModel(new("agent_tools", "Tools"), JsonNode.Parse("""{"agent_tools":["read","edit"]}""")!.AsObject());
+Check(arrayField.Value == "read,edit", "Array editor displayed raw JSON");
+fake.DelayNextGet = true;
+var staleRefresh = vm.RefreshConfig();
+await vm.SaveConfig(c => c["models"]![0]!["name"] = "Fresh saved name");
+fake.PendingRead!.SetResult(fake.OldReadSnapshot!);
+await staleRefresh;
+Check(vm.Model("a")!.Name == "Fresh saved name", "Late refresh overwrote newer save");
+Console.WriteLine("PASS: row refresh, unknown fields, failed save, saved/refresh failure, serialized saves, edit revision, external merge/conflict, array editor, stale refresh.");
 
 sealed class FakeApi : IManagerApi
 {
     private JsonObject config = JsonNode.Parse("""{"future_setting":"keep","models":[{"id":"a","name":"A","context":2048,"path":"fixture"}],"profiles":[]}""")!.AsObject();
+    public void External(Action<JsonObject> edit) => edit(config);
     public bool FailSave, FailStatus;
     private int writes;
     public int MaxWrites;
-    public Task<JsonObject> Get(string path) => path.EndsWith("status") ? FailStatus ? throw new IOException("fixture offline") : Task.FromResult(new JsonObject()) : Task.FromResult(config.DeepClone().AsObject());
+    public bool DelayNextGet;
+    public TaskCompletionSource<JsonObject>? PendingRead;
+    public JsonObject? OldReadSnapshot;
+    public Task<JsonObject> Get(string path)
+    {
+        if (path.EndsWith("status")) return FailStatus ? throw new IOException("fixture offline") : Task.FromResult(new JsonObject());
+        if (DelayNextGet) { DelayNextGet=false; OldReadSnapshot=config.DeepClone().AsObject(); PendingRead=new(); return PendingRead.Task; }
+        return Task.FromResult(config.DeepClone().AsObject());
+    }
     public async Task<JsonObject> Put(string path, JsonObject body)
     {
         if (FailSave) throw new InvalidOperationException("fixture rejected");

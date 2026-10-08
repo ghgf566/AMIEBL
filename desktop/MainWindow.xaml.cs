@@ -133,7 +133,7 @@ public partial class MainWindow : Window
             if (!string.IsNullOrWhiteSpace(readyPid) && readyPid != lastReadyPid)
             {
                 lastReadyPid = readyPid;
-                config = await api.Get("/manager/config");
+                await workspace.RefreshConfig();
                 if (currentPage == "模型庫" && !dirty)
                 {
                     string selectedModel = workspace.SelectedModelId ?? J.S(status, "model_id", DefaultModel());
@@ -165,9 +165,7 @@ public partial class MainWindow : Window
         SetLive("pid", "模型進程 PID  " + J.S(status, "pid", "—") + "   ·   " + (J.B(status, "accepting", true) ? "接受新請求" : "已暫停接收"));
         SetLive("idle", J.D(status, "unload_in_seconds") is double time ? $"若持續閒置，約 {Math.Ceiling(time / 60)} 分鐘後卸載" : "按需載入；閒置行為依模型設定執行");
         SetLive("error", J.S(status, "last_error", ""));
-        string pendingText = J.B(status, "pending_restart")
-            ? "Agent 連線埠等待完全重啟後生效。"
-            : J.B(status, "pending_model_reload") ? "模型載入參數等待重新載入。" : "設定已套用";
+        string pendingText = workspace.ApplicationState;
         SetLive("pending", pendingText);
         var active = requests.FirstOrDefault(x => !IsFinished(x) && J.S(x, "phase") != "queued");
         SetLive("phase", active is null ? "目前沒有執行中的任務" : PhaseName(J.S(active, "phase")));
@@ -492,6 +490,7 @@ public partial class MainWindow : Window
         if (tickNames.Count == 0 || (1L << (int)Math.Floor(maxContextLog)) < contextSliderMax) tickNames.Add(contextSliderMax >= 1048576 ? $"{contextSliderMax / 1048576.0:0.#}M" : $"{contextSliderMax / 1024.0:0.#}K");
         contextTicks.Text = string.Join("   ", tickNames);
         contextPanel.Children.Add(contextTicks);
+        contextPanel.Children.Add(Text("引擎使用中 Context：" + (J.S(status, "model_id") == id ? J.S(status["loaded_model_settings"], "context", "尚未載入") : "此模型未載入") + "；編輯與儲存的值可能需重新載入後生效。", 11, true));
         bool syncingContext = false;
         contextSlider.ValueChanged += (_, _) =>
         {

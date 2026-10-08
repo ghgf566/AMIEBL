@@ -1,0 +1,44 @@
+# Desktop architecture and verification
+
+The default frontend is now native WinUI 3 (Windows App SDK 1.8.260921001, x64, Windows 10 2004+). WPF remains an explicit fallback and a regression reference.
+
+## Boundaries
+
+- `desktop-core`: API transport, typed/lossless model and profile snapshots, observable workspace state, draft/field view models, async commands, editor schemas, serialized save/merge/conflict handling. No WPF or WinUI dependency.
+- `desktop-platform`: Python discovery/private environment, owned backend process/job cleanup, shared single-instance identity, Windows startup and tray adapters.
+- `desktop-winui`: native NavigationView/InfoBar/form bindings, window/picker/dialog adapters, five functional pages. View-specific navigation and UI orchestration remain here.
+- `desktop`: retained WPF adapter using the shared workspace/configuration service. Its programmatic page builders remain intentionally available for comparison; this is not a rewrite of every legacy WPF view into XAML bindings.
+- `backend`: existing FastAPI/llama.cpp supervisor. `/manager/status.loaded_model_settings` exposes the loaded snapshot and effective GPU layers, separately from saved configuration. No model/settings files are moved by the frontend migration.
+
+## State rules
+
+Resolve model/profile identity from the current snapshot when opening an editor. Editing uses a separate draft; polling must not overwrite it. Saving serializes mutations, starts from the newest server configuration, preserves unknown fields, and uses the validated PUT response as the persisted truth. A later status-refresh failure is reported as saved-but-refresh-failed. A stale poll cannot replace newer saved state. Draft editors only merge changed fields and reject conflicts with external changes to the same field. Capability metadata remains read-only; template inference is not proof of sampler enforcement.
+
+The API still accepts complete JSON PUTs without a server ETag. The draft conflict check detects changes seen by its GET; an independent client writing in the interval between GET and PUT can still race. Backend revision/ETag support is future hardening, not a claimed guarantee.
+
+## Build
+
+```powershell
+./build.ps1 -OutputDirectory C:\path\to\new-output -SelfContained
+./build.ps1 -Frontend WPF -OutputDirectory C:\path\to\wpf-output
+dotnet run --project tests/DesktopCoreRegression -c Release
+python -m unittest discover -s tests -p "test_*.py" -v
+```
+
+Build into a new folder. Do not overwrite a running release, its portable data directory, or its models. WinUI and WPF deliberately share the existing single-instance identity for a given data directory, so fully exit the old program before launching the new one with that data directory.
+
+## Native operation regression
+
+Create a dedicated configuration containing two registered models and two profiles, disable preload/autostart, choose free API/engine ports, and use a new data directory:
+
+```powershell
+./LocalModelManager.exe --smoke-test --data-dir C:\path\to\isolated-data --port 18990
+```
+
+WinUI smoke tests require an explicit data directory. They exercise TextBox bindings, actual API persistence, ListView selection away/back, the five page layouts, PNG rendering, and owned backend shutdown. They restore the test configuration in `finally`; no GGUF inference or startup registry writes are performed. Artifacts: `winui-smoke-test.json`, `winui-screenshots/`.
+
+WPF uses `--smoke-test --editor-refresh-test --data-dir ...`. Core regressions cover unknown fields, observable refresh, failed saves, partial success, serialization, edit revisions, external merge/conflicts, array formatting, and stale responses.
+
+Real picker interaction, tray menu clicks, VS Code writes, installer behavior, other Windows versions and GGUF families require separate acceptance testing. The frontend migration does not establish new inference compatibility guarantees.
+
+The publish target explicitly includes the app PRI and compiled XBF resources; compiling successfully alone does not validate an unpackaged release. Use tests/Test-Desktop.ps1 with FrontendDirectory to test the exact published artifact in a fresh isolated directory; it checks process exit and fresh result files.

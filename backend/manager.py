@@ -1139,7 +1139,7 @@ class Manager:
                     await asyncio.sleep(0.15)
                 else:
                     raise ValueError("模型載入超過五分鐘，已停止本次載入。")
-                self.loaded_config = {"model": copy.deepcopy(model), "engine_dir": self.config["engine_dir"], "engine_port": engine_port}
+                self.loaded_config = {"model": copy.deepcopy(model), "engine_dir": self.config["engine_dir"], "engine_port": engine_port, "gpu_layers_effective": layers}
                 self.state = "ready"
                 self.last_used = time.monotonic()
                 self.deferred_unload = False
@@ -1755,6 +1755,7 @@ class Manager:
                 "unload_in_seconds": round(max(0, limit - idle), 1) if limit is not None and self.state == "ready" and not self.tickets else None,
                 "last_error": self.last_error, "api_url": f"http://127.0.0.1:{self.port}/v1/chat/completions",
                 "engine_version": self.engine_version, "slots": self.slots, "resources": self.resources,
+                "loaded_model_settings": ({**engine_load_model_config(self.loaded_config["model"]), "gpu_layers_effective": self.loaded_config.get("gpu_layers_effective")} if self.loaded_config and self.state == "ready" else None),
                 "pending_config": self.pending(), "pending_restart": self.pending_restart(),
                 "pending_model_reload": self.pending_model_reload(), "deferred_unload": self.deferred_unload}
 
