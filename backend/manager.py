@@ -209,6 +209,9 @@ def validate_config(value: Any) -> dict:
             p["reasoning_level"] = {"low": "light", "medium": "balanced", "high": "deep", "xhigh": "extreme"}.get(legacy, "balanced")
         if p.get("reasoning_level") not in ("light", "balanced", "deep", "extreme"):
             raise ValueError("無效的 AMIEBL 思考強度。")
+        # Keep the legacy model-specific field synchronized for older exports
+        # and external tooling. Runtime policy never reads this field.
+        p["effort"] = {"light": "low", "balanced": "medium", "deep": "high", "extreme": "xhigh"}[p["reasoning_level"]]
         if "budget_mode" not in p:
             p["budget_mode"] = "custom" if "thinking_budget" in p else "auto"
         if p.get("budget_mode") not in ("auto", "custom"):
