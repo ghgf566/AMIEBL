@@ -90,10 +90,65 @@ public partial class MainWindow
         await ((App)Application.Current).ExitManager();
     }
 
+    private static T? FindSmokeControl<T>(DependencyObject node, string name) where T : FrameworkElement
+    {
+        if (node is T found && found.Name == name) return found;
+        foreach (var child in LogicalTreeHelper.GetChildren(node).OfType<DependencyObject>())
+            if (FindSmokeControl<T>(child, name) is T match) return match;
+        return null;
+    }
+
+    private async Task VerifyEditorRefresh()
+    {
+        // Only the isolated --smoke-test data directory is modified; restore
+        // its original values even if an assertion fails.
+        var original = Clone(config);
+        try
+        {
+            if (J.A(config, "models").Count < 2 || J.A(config, "profiles").Count < 2)
+                throw new InvalidOperationException("編輯器回歸測試需要兩個模型與使用模式。");
+            ShowPage("模型庫");
+            var modelId = J.S(J.A(config, "models")[0], "id");
+            var otherModelId = J.S(J.A(config, "models")[1], "id");
+            var input = FindSmokeControl<System.Windows.Controls.TextBox>((DependencyObject)PageContent.Content, "ModelContextInput")
+                ?? throw new InvalidOperationException("找不到 Context 輸入欄。");
+            int changedContext = input.Text == "512" ? 1024 : 512;
+            input.Text = changedContext.ToString();
+            await pendingSave!();
+            SelectModel(otherModelId); SelectModel(modelId);
+            input = FindSmokeControl<System.Windows.Controls.TextBox>((DependencyObject)PageContent.Content, "ModelContextInput");
+            if (input?.Text != changedContext.ToString()) throw new InvalidOperationException("模型切回後顯示舊 Context。");
+
+            ShowPage("使用模式");
+            var profileId = J.S(J.A(config, "profiles")[0], "id");
+            var otherProfileId = J.S(J.A(config, "profiles")[1], "id");
+            var budget = FindSmokeControl<System.Windows.Controls.TextBox>((DependencyObject)PageContent.Content, "ProfileBudgetInput")
+                ?? throw new InvalidOperationException("找不到思考預算輸入欄。");
+            int changedBudget = budget.Text == "64" ? 65 : 64;
+            budget.Text = changedBudget.ToString();
+            await pendingSave!();
+            SelectProfile(otherProfileId); SelectProfile(profileId);
+            budget = FindSmokeControl<System.Windows.Controls.TextBox>((DependencyObject)PageContent.Content, "ProfileBudgetInput");
+            if (budget?.Text != changedBudget.ToString()) throw new InvalidOperationException("模式切回後顯示舊預算。");
+        }
+        finally
+        {
+            config = await api!.Put("/manager/config", original);
+            dirty = false; pendingSave = null;
+        }
+    }
+
     public async Task RunSmokeTest()
     {
         // Render native WPF pages without making a visible window or touching autostart.
         timer.Stop();
+        bool verifyEditors = App.Arguments.Contains("--editor-refresh-test");
+        if (verifyEditors)
+        {
+            if (App.Option("--data-dir") is null)
+                throw new InvalidOperationException("編輯器回歸測試必須明確指定隔離資料目錄。");
+            await VerifyEditorRefresh();
+        }
         var results = new JsonArray();
         string screenshots = Path.Combine(App.DataDir, "screenshots"); Directory.CreateDirectory(screenshots);
         for (int i = 0; i < Pages.Length; i++)
@@ -112,7 +167,7 @@ public partial class MainWindow
         var connection = await api!.Get("/manager/connection");
         await File.WriteAllTextAsync(Path.Combine(App.DataDir, "desktop-smoke-test.json"), new JsonObject
         {
-            ["ok"] = true, ["pages"] = results, ["config_read"] = true, ["state"] = J.S(status, "state"),
+            ["ok"] = true, ["editor_refresh_verified"] = verifyEditors, ["pages"] = results, ["config_read"] = true, ["state"] = J.S(status, "state"),
             ["connection_read"] = true, ["model_count"] = J.A(config, "models").Count,
             ["profile_count"] = J.A(config, "profiles").Count,
             ["autostart_changed"] = false, ["model_loaded"] = J.S(status, "state") != "unloaded",

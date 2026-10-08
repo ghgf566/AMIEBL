@@ -27,7 +27,7 @@ public partial class MainWindow
             label.Children.Add(Text(J.S(item, "name"), 15));
             string budgetLabel = J.S(item, "budget_mode", "custom") == "auto" ? "自動預算" : J.S(item, "thinking_budget") + " 思考 tokens";
             label.Children.Add(Text(ThinkingName(J.S(item, "thinking_mode")) + " · " + ReasoningLevelName(J.S(item, "reasoning_level", "balanced")) + " · " + budgetLabel, 11, true));
-            list.Items.Add(new ListBoxItem { Content = label, Tag = item });
+            list.Items.Add(new ListBoxItem { Content = label, Tag = J.S(item, "id") });
         }
         left.Children.Add(list);
         var editor = new ContentControl();
@@ -36,9 +36,11 @@ public partial class MainWindow
         bool restoring = false;
         list.SelectionChanged += async (_, _) => await Guard(async () =>
         {
-            if (restoring || list.SelectedItem is not ListBoxItem selected || selected.Tag is not JsonObject profile) return;
+            if (restoring || list.SelectedItem is not ListBoxItem selected || selected.Tag is not string profileId) return;
             if (!await LeaveEditor()) { restoring = true; list.SelectedItem = previous; restoring = false; return; }
             previous = selected;
+            var profile = J.A(config, "profiles").OfType<JsonObject>().FirstOrDefault(x => J.S(x, "id") == profileId);
+            if (profile is null) throw new InvalidOperationException("此使用模式已被移除，請重新整理。");
             editor.Content = Scroll(BuildProfileEditor(profile)); dirty = false;
         });
         left.Children.Add(ActionRow(Button("＋ 新增模式", async () =>
@@ -60,7 +62,7 @@ public partial class MainWindow
     private void SelectProfile(string id)
     {
         if (PageContent.Content is Grid grid && grid.Tag is ListBox list)
-            list.SelectedItem = list.Items.Cast<ListBoxItem>().FirstOrDefault(x => J.S(x.Tag as JsonObject, "id") == id);
+            list.SelectedItem = list.Items.Cast<ListBoxItem>().FirstOrDefault(x => x.Tag?.ToString() == id);
     }
 
     private static string ThinkingName(string mode) => mode switch { "auto" => "自動判斷", "on" => "固定思考", "off" => "關閉思考", "model" => "跟隨模型預設", _ => mode };
@@ -79,6 +81,7 @@ public partial class MainWindow
             ("auto", "自動 · 依模型能力與思考強度"), ("custom", "自訂上限 · 需引擎支援"));
         var budgetPanel = new StackPanel { Margin = new Thickness(16, 0, 0, 0) };
         var budget = Field(budgetPanel, "自訂思考預算上限（tokens）", J.S(profile, "thinking_budget", "1536"));
+        budget.Name = "ProfileBudgetInput";
         panel.Children.Add(budgetPanel);
         budgetPanel.Children.Add(Text("此值會與原生 effort 同時傳送；只有 llama.cpp parser 能辨識思考結束標記時才會限制思考。客戶端明確指定 reasoning 設定時優先，較小的整次生成上限也會縮減此預算。", 11, true));
         var max = Field(panel, "整次生成上限（包含思考與回答）", J.S(profile, "max_tokens", "8192"));

@@ -399,16 +399,19 @@ public partial class MainWindow : Window
         var search = new TextBox { ToolTip = "搜尋模型名称或檔案位置" }; left.Children.Add(Text("搜尋模型", 12, true)); left.Children.Add(search);
         foreach (var model in J.A(config, "models"))
         {
-            var item = new StackPanel(); item.Children.Add(Text(J.S(model, "name"), 14)); item.Children.Add(Text(J.S(model, "id") == DefaultModel() ? "預設模型" : Path.GetFileName(J.S(model, "path")), 11, true)); list.Items.Add(new ListBoxItem { Content = item, Tag = model });
+            var item = new StackPanel(); item.Children.Add(Text(J.S(model, "name"), 14)); item.Children.Add(Text(J.S(model, "id") == DefaultModel() ? "預設模型" : Path.GetFileName(J.S(model, "path")), 11, true)); list.Items.Add(new ListBoxItem { Content = item, Tag = J.S(model, "id") });
         }
         left.Children.Add(list); var editor = new ContentControl(); Put(grid, Scroll(left), 0); Put(grid, editor, 2);
         ListBoxItem? previous = null; bool restoring = false;
-        search.TextChanged += (_, _) => { foreach (ListBoxItem item in list.Items) { var model = item.Tag as JsonObject; string query = search.Text.Trim(); item.Visibility = (J.S(model, "name") + " " + J.S(model, "path")).Contains(query, StringComparison.OrdinalIgnoreCase) ? Visibility.Visible : Visibility.Collapsed; } };
+        search.TextChanged += (_, _) => { foreach (ListBoxItem item in list.Items) { var model = J.A(config, "models").FirstOrDefault(x => J.S(x, "id") == item.Tag?.ToString()); string query = search.Text.Trim(); item.Visibility = (J.S(model, "name") + " " + J.S(model, "path")).Contains(query, StringComparison.OrdinalIgnoreCase) ? Visibility.Visible : Visibility.Collapsed; } };
         list.SelectionChanged += async (_, _) => await Guard(async () =>
         {
-            if (restoring || list.SelectedItem is not ListBoxItem selected || selected.Tag is not JsonObject model) return;
+            if (restoring || list.SelectedItem is not ListBoxItem selected || selected.Tag is not string modelId) return;
             if (!await LeaveEditor()) { restoring = true; list.SelectedItem = previous; restoring = false; return; }
             previous = selected;
+            // LeaveEditor may save and replace config; resolve after it finishes.
+            var model = J.A(config, "models").OfType<JsonObject>().FirstOrDefault(x => J.S(x, "id") == modelId);
+            if (model is null) throw new InvalidOperationException("此模型已被移除，請重新整理模型庫。");
             editor.Content = Scroll(BuildModelEditor(model)); dirty = false;
         });
         left.Children.Add(ActionRow(Button("掃描資料夾", ScanModels, true), Button("加入檔案", AddModelFile)));
@@ -430,7 +433,7 @@ public partial class MainWindow : Window
     private void SelectModel(string id)
     {
         if (PageContent.Content is Grid grid && grid.Tag is ListBox list)
-            list.SelectedItem = list.Items.Cast<ListBoxItem>().FirstOrDefault(x => J.S(x.Tag as JsonObject, "id") == id);
+            list.SelectedItem = list.Items.Cast<ListBoxItem>().FirstOrDefault(x => x.Tag?.ToString() == id);
     }
     private UIElement BuildModelEditor(JsonObject model)
     {
@@ -443,7 +446,7 @@ public partial class MainWindow : Window
         int contextSliderMin = nativeContext > 0 && nativeContext < 2048 ? 512 : 2048;
         int contextSliderMax = nativeContext > 0 ? Math.Max(contextSliderMin, nativeContext) : 2_097_152;
         var contextPanel = Section("上下文容量", nativeContext > 0 ? $"GGUF 宣告的原生上限：{nativeContext:N0} tokens" : "尚未偵測到模型原生上限；仍可直接輸入精確 token 數。");
-        var context = new TextBox { Text = currentContext.ToString(CultureInfo.InvariantCulture), Margin = new Thickness(0, 0, 0, 6) };
+        var context = new TextBox { Name = "ModelContextInput", Text = currentContext.ToString(CultureInfo.InvariantCulture), Margin = new Thickness(0, 0, 0, 6) };
         contextPanel.Children.Add(context);
         double minContextLog = Math.Log(contextSliderMin, 2);
         double maxContextLog = Math.Log(contextSliderMax, 2);
