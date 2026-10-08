@@ -1053,8 +1053,15 @@ class Manager:
             self.last_error = None
             self.model = model
             try:
-                if not Path(model["path"]).is_file():
+                model_path = Path(model["path"])
+                if not model_path.is_file():
                     raise ValueError("模型檔案不存在，請在模型庫重新選擇位置。")
+                try:
+                    with model_path.open("rb") as model_file:
+                        if model_file.read(4) != b"GGUF":
+                            raise ValueError("指定的主模型不是有效的 GGUF 檔案。")
+                except OSError as exc:
+                    raise ValueError("無法讀取主模型 GGUF。") from exc
                 if model["vision"]:
                     projector_path = Path(model["mmproj"])
                     if not projector_path.is_file():
