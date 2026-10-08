@@ -72,7 +72,8 @@ public partial class MainWindow : Window
         api = client;
         config = await api.Get("/manager/config");
         await Poll(); ShowPage("總覽"); timer.Start();
-        if (J.B(status, "pending_config")) ShowNotice("部分設定尚未套用；下一個推理請求會先重新載入模型，或可手動按「載入模型」立即套用。");
+        if (J.B(status, "pending_restart")) ShowNotice("Agent 連線埠已變更；需完全結束並重新開啟管理器才會生效。");
+        else if (J.B(status, "pending_model_reload")) ShowNotice("模型載入設定尚未套用；下一個推理請求會先重新載入模型，或可手動重新載入。");
     }
     public void Reveal() { Show(); WindowState = WindowState.Normal; ShowInTaskbar = true; Activate(); }
     public void PrepareExit() { exiting = true; timer.Stop(); tray.Visible = false; tray.ContextMenuStrip?.Dispose(); tray.Dispose(); ownedIcon?.Dispose(); }
@@ -150,7 +151,10 @@ public partial class MainWindow : Window
         SetLive("pid", "模型進程 PID  " + J.S(status, "pid", "—") + "   ·   " + (J.B(status, "accepting", true) ? "接受新請求" : "已暫停接收"));
         SetLive("idle", J.D(status, "unload_in_seconds") is double time ? $"若持續閒置，約 {Math.Ceiling(time / 60)} 分鐘後卸載" : "按需載入；閒置行為依模型設定執行");
         SetLive("error", J.S(status, "last_error", ""));
-        SetLive("pending", J.B(status, "pending_config") ? "有設定等待下次載入或重新啟動後生效。" : "設定已套用");
+        string pendingText = J.B(status, "pending_restart")
+            ? "Agent 連線埠等待完全重啟後生效。"
+            : J.B(status, "pending_model_reload") ? "模型載入參數等待重新載入。" : "設定已套用";
+        SetLive("pending", pendingText);
         var active = requests.FirstOrDefault(x => !IsFinished(x) && J.S(x, "phase") != "queued");
         SetLive("phase", active is null ? "目前沒有執行中的任務" : PhaseName(J.S(active, "phase")));
         SetLive("speed", active is null ? "—" : J.Metric(active, "generation_tps", " tok/s"));
@@ -158,7 +162,7 @@ public partial class MainWindow : Window
         SetLive("slot", active is null ? (J.S(status, "state") == "ready" ? "Slot 0 · 閒置" : "等待引擎就緒") : $"Slot 0 · {J.S(active, "profile_name", J.S(active, "profile_id"))} · {J.Metric(active, "elapsed_seconds", " 秒")}");
         tray.Text = ("Local Model Manager · " + state)[..Math.Min(63, ("Local Model Manager · " + state).Length)];
         UpdateTray();
-        Footer.Text = $"{api?.BaseUrl}  ·  " + (J.B(status, "pending_config") ? "部分設定等待重新載入" : "背景服務已連線") + "  ·  僅接受本機連線";
+        Footer.Text = $"{api?.BaseUrl}  ·  " + (J.B(status, "pending_restart") ? "等待管理器重啟" : J.B(status, "pending_model_reload") ? "等待模型重新載入" : "背景服務已連線") + "  ·  僅接受本機連線";
         if (taskList is not null)
         {
             string? selected = (taskList.SelectedItem as ListBoxItem)?.Tag?.ToString() ?? selectedTask;
@@ -614,7 +618,7 @@ public partial class MainWindow : Window
             }
             else
             {
-                ShowNotice(J.S(status, "model_id") == id && J.B(status, "pending_config")
+                ShowNotice(J.S(status, "model_id") == id && J.B(status, "pending_model_reload")
                     ? "模型設定已儲存。此模型目前仍以舊的載入參數執行；下一個推理請求會先重新載入，或可按「載入此模型」立即套用。"
                     : "模型設定已儲存。");
             }
