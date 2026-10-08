@@ -831,6 +831,46 @@ class ManagerIntegration(unittest.TestCase):
         status = self.get("/manager/status")
         self.assertTrue(status["pending_model_reload"])
         self.assertTrue(status["pending_config"])
+    def test_model_library_sampler_values_override_client_defaults_without_reload(self):
+        self.load()
+        config = self.get("/manager/config")
+        model = next(m for m in config["models"] if m["id"] == "test-model")
+        model.update(temperature=0.17, top_p=0.72, top_k=11, min_p=0.04)
+        response = self.api("PUT", "/manager/config", json=config)
+        self.assertEqual(response.status_code, 200, response.text)
+        saved = self.get("/manager/config")["models"][0]
+        for key, value in (("temperature", 0.17), ("top_p", 0.72), ("top_k", 11), ("min_p", 0.04)):
+            self.assertEqual(saved[key], value)
+        self.assertFalse(self.get("/manager/status")["pending_model_reload"])
+        r = self.completion("model sampler override", temperature=0.9, top_p=0.95, top_k=40, min_p=0.01)
+        self.assertEqual(r.status_code, 200, r.text)
+        forwarded = self.events("post")[-1]["body"]
+        self.assertEqual({key: forwarded[key] for key in ("temperature", "top_p", "top_k", "min_p")},
+                         {"temperature": 0.17, "top_p": 0.72, "top_k": 11, "min_p": 0.04})
+        self.assertEqual(len(self.events("start")), 1, "Sampling settings are per-request, not engine load arguments")
+
+        # Auto/None yields precedence back to the client and llama.cpp.
+        config = self.get("/manager/config")
+        model = next(m for m in config["models"] if m["id"] == "test-model")
+        model.update(temperature=None, top_p=None, top_k=None, min_p=None)
+        response = self.api("PUT", "/manager/config", json=config)
+        self.assertEqual(response.status_code, 200, response.text)
+        r = self.completion("client sampler defaults", temperature=0.9, top_p=0.95, top_k=40, min_p=0.01)
+        self.assertEqual(r.status_code, 200, r.text)
+        forwarded = self.events("post")[-1]["body"]
+        self.assertEqual({key: forwarded[key] for key in ("temperature", "top_p", "top_k", "min_p")},
+                         {"temperature": 0.9, "top_p": 0.95, "top_k": 40, "min_p": 0.01})
+        self.assertEqual(len(self.events("start")), 1)
+
+    def test_model_library_sampler_zero_values_are_forwarded(self):
+        config = self.get("/manager/config")
+        config["models"][0].update(temperature=0, top_p=0, top_k=0, min_p=0)
+        response = self.api("PUT", "/manager/config", json=config)
+        self.assertEqual(response.status_code, 200, response.text)
+        r = self.completion(temperature=0.8, top_p=0.95, top_k=40, min_p=0.05)
+        self.assertEqual(r.status_code, 200, r.text)
+        forwarded = self.events("post")[-1]["body"]
+        self.assertEqual([forwarded[key] for key in ("temperature", "top_p", "top_k", "min_p")], [0, 0, 0, 0])
     def test_default_profile_change_applies_without_engine_reload(self):
         self.load()
         config = self.get("/manager/config")
