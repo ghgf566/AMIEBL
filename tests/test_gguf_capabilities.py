@@ -19,9 +19,10 @@ def gguf_string(value: str) -> bytes:
     return struct.pack("<Q", len(data)) + data
 
 
-def write_fixture(path: Path, *, nextn_layers: int | None, nextn_tensor: bool) -> None:
+def write_fixture(path: Path, *, nextn_layers: int | None, nextn_tensor: bool, context_length: int = 262144) -> None:
     kv = []
     kv.append(gguf_string("general.architecture") + struct.pack("<I", 8) + gguf_string("qwen35"))
+    kv.append(gguf_string("qwen35.context_length") + struct.pack("<I", 4) + struct.pack("<I", context_length))
     if nextn_layers is not None:
         kv.append(
             gguf_string("qwen35.nextn_predict_layers")
@@ -58,6 +59,7 @@ class GgufCapabilityTests(unittest.TestCase):
             self.assertEqual(result["mtp_capability"], "available")
             self.assertEqual(result["mtp_layers"], 1)
             self.assertEqual(result["gguf_architecture"], "qwen35")
+            self.assertEqual(result["native_context"], 262144)
             self.assertEqual(result["mtp_tensor_count"], 1)
 
     def test_rejects_model_without_mtp(self):
