@@ -61,7 +61,12 @@ try {
     foreach ($item in @('data\settings.json','models\another.gguf','my-notes.txt')) {
         if (-not (Test-Path -LiteralPath (Join-Path $manual $item))) { throw "Manual upgrade deleted user file: $item" }
     }
+    # A shipped file modified by the user must survive a selective uninstall.
+    Set-Content -LiteralPath (Join-Path $manual 'README.md') -Value 'user-customized-readme'
     & (Join-Path $manual 'installer\Uninstall-LocalModelManager.ps1') -InstallDirectory $manual -Child
+    if ((Get-Content -LiteralPath (Join-Path $manual 'README.md') -Raw).Trim() -ne 'user-customized-readme') {
+        throw 'Manual uninstall removed a modified tracked file'
+    }
     foreach ($item in @('data\settings.json','models\another.gguf','my-notes.txt')) {
         if (-not (Test-Path -LiteralPath (Join-Path $manual $item))) { throw "Manual uninstall deleted user file: $item" }
     }
