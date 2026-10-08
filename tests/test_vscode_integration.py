@@ -36,6 +36,33 @@ class IntegrationTests(unittest.TestCase):
         model.pop("reasoning_capability")
         model["reasoning_supported"] = True
         self.assertTrue(integration.model_entries(config)[0]["thinking"])
+    def test_large_profile_limit_keeps_agent_input_capacity(self):
+        config = copy.deepcopy(self.config)
+        config['profiles'][0]['max_tokens'] = 1048576
+        original = copy.deepcopy(config)
+        for context, expected in [(65536, (49152, 16384)), (262144, (196608, 65536)), (512, (384, 128))]:
+            with self.subTest(context=context):
+                config['models'][0]['context'] = context
+                entry = integration.model_entries(config)[0]
+                self.assertEqual((entry['maxInputTokens'], entry['maxOutputTokens']), expected)
+                self.assertEqual(entry['maxInputTokens'] + entry['maxOutputTokens'], context)
+        self.assertEqual(config['profiles'], original['profiles'])
+
+    def test_small_output_limit_and_preview_match_export(self):
+        self.config['profiles'][0]['max_tokens'] = 1024
+        entry = integration.model_entries(self.config)[0]
+        self.assertEqual(entry['maxOutputTokens'], 1024)
+        self.assertEqual(entry['maxInputTokens'], 64512)
+        preview = integration.preview(self.config, self.root / 'data')
+        self.assertEqual(preview['token_limits'][0]['input'], entry['maxInputTokens'])
+        self.assertEqual(preview['token_limits'][0]['output'], entry['maxOutputTokens'])
+        self.assertIn('64,512', preview['summary'])
+        self.models.write_text('[]', encoding='utf-8')
+        integration.apply(self.config, self.root / 'data')
+        exported = json.loads(self.models.read_text(encoding='utf-8'))[0]['models'][0]
+        self.assertEqual(exported['maxInputTokens'], entry['maxInputTokens'])
+        self.assertEqual(exported['maxOutputTokens'], entry['maxOutputTokens'])
+
     def test_jsonc_preserves_strings_and_strips_comments(self):
         source = '[ // a comment\n {"url":"http://localhost", "secret":"a/*b*/,]\\\"",},]'
         result = integration.read_jsonc(source)
