@@ -1572,8 +1572,9 @@ class Manager:
     def status(self):
         idle = max(0, time.monotonic() - self.last_used) if not self.tickets else 0
         limit = self.idle_limit()
+        current_model = next((m for m in self.config["models"] if self.model and m["id"] == self.model["id"]), self.model)
         return {"state": self.state, "model_id": self.model["id"] if self.model else None,
-                "model_name": self.model["name"] if self.model else None,
+                "model_name": current_model["name"] if current_model else None,
                 "pid": self.process.pid if self.process and self.process.poll() is None else None,
                 "accepting": self.accepting, "active_count": int(self.active is not None and not self.active.done.is_set()),
                 "queued_count": sum(1 for t in self.tickets.values() if t is not self.active and not t.done.is_set()),
