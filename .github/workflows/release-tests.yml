@@ -69,4 +69,4 @@ jobs:
       - name: Verify both installers preserve user data
         shell: pwsh
         run: |
-          .\tests\Test-ReleasePackaging.ps1 -PortableDirectory (Join-Path $env:RUNNER_TEMP 'package\portable') -SetupExe (Join-Path $env:RUNNER_TEMP 'package\installer\LocalModelManager-Setup.exe')
+          .\tests\Test-ReleasePackaging.ps1 -PortableDirectory (Join-Path $env:RUNNER_TEMP 'package\portable') -SetupExe (Join-Path $env:RUNNER_TEMP 'package\installer\AMIEBL-v1.0.0-win-x64-setup.exe')

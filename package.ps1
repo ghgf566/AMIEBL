@@ -4,7 +4,9 @@
     [string]$ModelDirectory = '',
     [string]$OutputDirectory = (Join-Path $PSScriptRoot '..\..\outputs\LocalModelManager-release'),
     [switch]$SelfContained,
-    [switch]$BuildInstaller
+    [switch]$BuildInstaller,
+    [string]$IsccPath = '',
+    [string]$ThirdPartyDirectory = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -44,7 +46,15 @@ $engineExe = Join-Path ([IO.Path]::GetFullPath($LlamaRoot)) 'llama-server.exe'
 if (-not (Test-Path -LiteralPath $engineExe -PathType Leaf)) {
     throw "找不到 llama-server.exe：$engineExe。請用 -LlamaRoot 指向 llama.cpp 的可執行檔資料夾。"
 }
-Copy-Tree ([IO.Path]::GetFullPath($LlamaRoot)) (Join-Path $portable 'llama.cpp') @('.git', 'build', 'out', 'models')
+# Only engine binaries and their license notices belong in a public bundle.
+# Developer launchers, proxy configs, logs and model folders must never leak.
+$engineTarget = Join-Path $portable 'llama.cpp'
+New-Item -ItemType Directory -Force -Path $engineTarget | Out-Null
+Get-ChildItem -LiteralPath ([IO.Path]::GetFullPath($LlamaRoot)) -File | Where-Object {
+    $_.Extension -eq '.dll' -or
+    ($_.Extension -eq '.exe' -and $_.BaseName -match '^(llama|ggml)(-|$)') -or
+    $_.Name -match '^(LICENSE|NOTICE|COPYING)([.-]|$)'
+} | ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination $engineTarget }
 
 if ($ModelDirectory) {
     $modelSource = [IO.Path]::GetFullPath($ModelDirectory)
@@ -62,17 +72,20 @@ if ($PythonHome) {
 }
 
 Copy-Item -LiteralPath (Join-Path $repo 'installer') -Destination (Join-Path $portable 'installer') -Recurse -Force
-foreach ($document in @('LICENSE','README.md','SECURITY.md','PRODUCT-IDENTITY.md','DESKTOP-ARCHITECTURE.md','CONTRACT.md')) {
+foreach ($document in @('LICENSE','README.md','SECURITY.md','PRODUCT-IDENTITY.md','DESKTOP-ARCHITECTURE.md','CONTRACT.md','THIRD-PARTY-NOTICES.md')) {
     Copy-Item -LiteralPath (Join-Path $repo $document) -Destination (Join-Path $portable $document) -Force
 }
 Copy-Item -LiteralPath (Join-Path $repo '使用說明.md') -Destination (Join-Path $portable '使用說明.md') -Force
+if ($ThirdPartyDirectory) {
+    Copy-Tree ([IO.Path]::GetFullPath($ThirdPartyDirectory)) (Join-Path $portable 'third-party')
+}
 @('@echo off', 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0installer\Install-LocalModelManager.ps1" -PortableDirectory "%~dp0"', 'pause') | Set-Content -LiteralPath (Join-Path $portable 'Install-LocalModelManager.cmd') -Encoding ASCII
 
 @{
     product = 'AMIEBL'
     version = '1.0.0'
     built_at_utc = [DateTime]::UtcNow.ToString('o')
-    engine_source = [IO.Path]::GetFullPath($LlamaRoot)
+    engine_executable = 'llama.cpp/llama-server.exe'
     model_included = [bool]$ModelDirectory
     python_runtime_included = [bool]$PythonHome
     dotnet_runtime_included = [bool]$SelfContained
@@ -96,6 +109,7 @@ default framework-dependent build needs the .NET 10 Windows Desktop Runtime.
 if ($BuildInstaller) {
     $iscc = $null
     $candidates = @(
+        $IsccPath,
         (Get-Command ISCC.exe -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -First 1),
         (Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'),
         (Join-Path $env:ProgramFiles 'Inno Setup 6\ISCC.exe')

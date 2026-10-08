@@ -7,7 +7,7 @@ $destination = [IO.Path]::GetFullPath($OutputDirectory)
 New-Item -ItemType Directory -Force -Path $destination | Out-Null
 $project = Join-Path $PSScriptRoot 'desktop-winui\AMIEBL.WinUI.csproj'
 $selfContainedValue = if ($SelfContained) { 'true' } else { 'false' }
-& dotnet publish $project -c Release -r win-x64 -p:Platform=x64 --self-contained $selfContainedValue -p:NuGetAudit=false -o $destination
+& dotnet publish $project -c Release -r win-x64 -p:Platform=x64 --self-contained $selfContainedValue -p:NuGetAudit=false -p:DebugType=None -p:DebugSymbols=false -o $destination
 if ($LASTEXITCODE -ne 0) { throw 'WinUI 3 桌面程式建置失敗。' }
 $backendTarget = Join-Path $destination 'backend'
 New-Item -ItemType Directory -Force -Path $backendTarget | Out-Null

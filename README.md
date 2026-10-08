@@ -6,13 +6,13 @@
 
 AMIEBL 是專為 **Windows 本地 AI 模型與 VS Code Agent** 使用情境設計的桌面管理工具。它整合 GGUF 模型管理、推理參數、使用模式（Profile）、OpenAI-compatible API Proxy 與執行狀態監控，希望讓使用者不必先熟悉繁瑣的部署指令，也能開始使用本地 AI Agent。
 
-> **設計理念：讓複雜的事情留在介面背後。**  
+> **設計理念：讓複雜的事情留在介面背後。**
 > 本專案不是另一套模型推理核心；模型運算仍由 llama.cpp 負責，AMIEBL 則負責部署、設定、串接與觀察。
 
-**目前版本：** 1.0.0（準備首次正式 Release）  
-**作者：** Mr. Chen  
-**平台：** Windows x64（Windows 10 2004+；建議 Windows 11）  
-**桌面介面：** WinUI 3 / Windows App SDK / .NET 10  
+**目前版本：** 1.0.0（正式 Release 候選驗收中）
+**作者：** Mr. Chen
+**平台：** Windows x64（Windows 10 2004+；建議 Windows 11）
+**桌面介面：** WinUI 3 / Windows App SDK / .NET 10
 **授權：** [Apache License 2.0](LICENSE)
 
 [Releases](https://github.com/ghgf566/AMIEBL/releases) · [使用說明](使用說明.md) · [架構與驗證](DESKTOP-ARCHITECTURE.md) · [安全性政策](SECURITY.md)
@@ -91,14 +91,16 @@ http://127.0.0.1:8080/v1/chat/completions
 
 請查看 [GitHub Releases](https://github.com/ghgf566/AMIEBL/releases)。首次正式版本尚在準備中，Release 資產發布後才會在該頁提供下載。
 
-計畫提供兩種發行方式：
+v1.0.0 候選產物提供兩種發行方式（通過正式發布確認後上傳）：
 
 | 形式 | 說明 |
 | --- | --- |
 | **Portable** | 解壓縮後執行 `LocalModelManager.exe`；設定及執行資料可保存在發行包的 `data` 目錄 |
 | **Setup.exe** | 使用 Inno Setup 製作的 Windows 使用者層級安裝程式；程式與使用者資料分開保存 |
 
-**目前沒有 MSI 打包流程。** 預設發行包不附大型 GGUF 模型。
+檔名為 `AMIEBL-v1.0.0-win-x64-portable.zip` 與 `AMIEBL-v1.0.0-win-x64-setup.exe`。
+
+**目前沒有 MSI 打包流程。** 預設發行包不附 GGUF 模型、個人設定或 API 金鑰。候選包內含 llama.cpp b11232（CPU / CUDA 12.4）、Python 3.14.7 與後端套件、.NET 10 自包含 runtime 及 Windows App SDK；不需另行安裝 Python 或 .NET，NVIDIA GPU 仍需相容驅動。首次啟動不需下載後端套件。第三方元件適用 [各自授權](THIRD-PARTY-NOTICES.md)。
 
 ### 執行環境
 
@@ -185,13 +187,13 @@ cd AMIEBL
 
 ```powershell
 # Portable：指定已準備好的 llama.cpp 路徑
-.\package.ps1 -LlamaRoot 'C:\Tools\llama.cpp' -PythonHome 'C:\Python314' -SelfContained -OutputDirectory 'C:\AMIEBL-release'
+.\package.ps1 -LlamaRoot 'C:\Tools\llama.cpp' -PythonHome 'C:\AMIEBL-build\python-clean' -SelfContained -OutputDirectory 'C:\AMIEBL-release'
 
 # 如果安裝 Inno Setup 6，再加上 -BuildInstaller 製作 Setup.exe
-.\package.ps1 -LlamaRoot 'C:\Tools\llama.cpp' -PythonHome 'C:\Python314' -SelfContained -BuildInstaller -OutputDirectory 'C:\AMIEBL-setup-release'
+.\package.ps1 -LlamaRoot 'C:\Tools\llama.cpp' -PythonHome 'C:\AMIEBL-build\python-clean' -SelfContained -BuildInstaller -OutputDirectory 'C:\AMIEBL-setup-release'
 ```
 
-`-PythonHome` 可省略；`-ModelDirectory` 可選擇將模型納入 Portable，否則預設不複製大容量模型。為避免誤刪資料，打包器不會覆蓋已存在的 Portable 輸出資料夾。
+正式打包時 `-PythonHome` 應指向乾淨、已安裝 backend/requirements.txt 的執行環境，不要直接複製個人 Python 安裝。可用 `-IsccPath` 指定免安裝編譯器，`-ThirdPartyDirectory` 納入版本對應授權全文。開發測試時 `-PythonHome` 可省略；`-ModelDirectory` 可選擇將模型納入 Portable，否則預設不複製大容量模型。為避免誤刪資料，打包器不會覆蓋已存在的 Portable 輸出資料夾。
 
 詳見 [安裝與解除安裝說明](installer/README.md)。
 

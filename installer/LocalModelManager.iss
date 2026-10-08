@@ -1,4 +1,4 @@
-#define MyAppName "Local Model Manager"
+#define MyAppName "AMIEBL"
 #define MyAppVersion "1.0.0"
 #ifndef SourceDir
   #define SourceDir "..\..\outputs\LocalModelManager-release\portable"
@@ -11,11 +11,12 @@
 AppId={{E2C7192B-0D96-4D5E-AF2E-90E6C0C21C9D}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
-AppPublisher=Local Model Manager
+AppPublisher=Mr. Chen
+AppPublisherURL=https://github.com/ghgf566/AMIEBL
 DefaultDirName={localappdata}\Programs\LocalModelManager
 DefaultGroupName={#MyAppName}
 OutputDir={#OutputDir}
-OutputBaseFilename=LocalModelManager-Setup
+OutputBaseFilename=AMIEBL-v1.0.0-win-x64-setup
 Compression=lzma2/max
 SolidCompression=yes
 PrivilegesRequired=lowest
