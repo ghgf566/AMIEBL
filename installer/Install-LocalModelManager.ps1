@@ -22,8 +22,7 @@ if (Test-Path -LiteralPath (Join-Path $target 'unins000.exe')) {
 }
 $uninstallKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\LocalModelManager'
 $existingInstall = Get-ItemProperty -Path $uninstallKey -ErrorAction SilentlyContinue
-$knownInstall = $existingInstall -and
-    [string]::Equals([string]$existingInstall.InstallLocation, $target, [StringComparison]::OrdinalIgnoreCase)
+$knownInstall = ($null -ne $existingInstall) -and [string]::Equals([string]$existingInstall.InstallLocation, $target, [StringComparison]::OrdinalIgnoreCase)
 if ((Test-Path -LiteralPath (Join-Path $target 'portable.flag')) -and -not $knownInstall) {
     throw '目標位置是既有 Portable 資料夾；請另外選擇安裝位置，避免影響原本的資料。'
 }
