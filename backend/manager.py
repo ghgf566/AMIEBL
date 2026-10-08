@@ -681,8 +681,10 @@ class Manager:
                     raise ValueError("模型檔案不存在，請在模型庫重新選擇位置。")
                 if model["vision"] and not Path(model["mmproj"]).is_file():
                     raise ValueError("視覺模型檔案不存在，請重新指定。")
-                if model.get("mtp") and model.get("mtp_capability") != "available":
-                    raise ValueError("此 GGUF 未偵測到可用的 MTP／NextN 權重，請關閉 MTP 或改用包含 MTP head 的模型。")
+                if model.get("mtp"):
+                    detected_mtp = inspect_gguf_capabilities(model["path"])
+                    if detected_mtp["mtp_capability"] != "available":
+                        raise ValueError("此 GGUF 未偵測到可用的 MTP／NextN 權重，請關閉 MTP 或改用包含 MTP head 的模型。")
                 engine_port = self.engine_port_override or self.config["engine_port"]
                 if not free_port(engine_port):
                     raise ValueError(f"模型引擎連接埠 {engine_port} 已被使用。請停止舊啟動器或更換連接埠。")
