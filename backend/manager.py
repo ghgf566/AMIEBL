@@ -506,7 +506,7 @@ def analyze_reasoning_template(template: str) -> dict:
 def inspect_gguf_capabilities(path_value: str, _include_split_shards: bool = True) -> dict:
     """Inspect only the GGUF header/tensor directory; model weights are never loaded."""
     path = Path(path_value)
-    result = {"mtp_capability": "unknown", "mtp_layers": 0, "gguf_architecture": "", "native_context": 0, "mtp_tensor_count": 0,
+    result = {"inspection_ok": False, "mtp_capability": "unknown", "mtp_layers": 0, "gguf_architecture": "", "native_context": 0, "mtp_tensor_count": 0,
               "reasoning_capability": "unknown", "reasoning_efforts": [], "reasoning_default_effort": "",
               "reasoning_budget_supported": False, "reasoning_toggle_keys": [], "reasoning_detection": "pending"}
     if not path.is_file():
@@ -583,6 +583,7 @@ def inspect_gguf_capabilities(path_value: str, _include_split_shards: bool = Tru
                 result["mtp_capability"] = "unknown"
             else:
                 result["mtp_capability"] = "unavailable"
+            result["inspection_ok"] = True
     except (OSError, ValueError, OverflowError, struct.error):
         pass
 
@@ -612,7 +613,7 @@ def inspect_gguf_capabilities(path_value: str, _include_split_shards: bool = Tru
                 result["mtp_capability"] = "unavailable"
     return result
 
-def apply_detected_model_capabilities(model: dict, detected: dict, *, reset_reasoning: bool = False) -> None:
+def apply_detected_model_capabilities(model: dict, detected: dict, *, reset_for_path_change: bool = False) -> None:
     """Merge GGUF-derived capability metadata into one model config.
 
     Detection is authoritative for context/MTP. Reasoning metadata is replaced
@@ -620,6 +621,14 @@ def apply_detected_model_capabilities(model: dict, detected: dict, *, reset_reas
     template was found. Keeping this logic in one place prevents startup and
     save-time capability handling from drifting apart.
     """
+    inspection_ok = bool(detected.get("inspection_ok", False))
+    if not inspection_ok and not reset_for_path_change:
+        # A transient read/parse failure on the same GGUF must not erase a
+        # previously trusted capability snapshot. A real path change is different:
+        # stale metadata from the old model must be cleared even if the new file
+        # cannot be inspected yet.
+        return
+
     model["mtp_capability"] = detected.get("mtp_capability", "unknown")
     model["mtp_layers"] = int(detected.get("mtp_layers", 0) or 0)
     native_context = int(detected.get("native_context", 0) or 0)
@@ -630,7 +639,7 @@ def apply_detected_model_capabilities(model: dict, detected: dict, *, reset_reas
         # instead of persisting a config that validate_config will later reject.
         model["context"] = native_context
 
-    if reset_reasoning or detected.get("reasoning_detection") == "gguf":
+    if reset_for_path_change or detected.get("reasoning_detection") == "gguf":
         model["reasoning_capability"] = detected.get("reasoning_capability", "unknown")
         model["reasoning_efforts"] = copy.deepcopy(detected.get("reasoning_efforts", []))
         model["reasoning_default_effort"] = str(detected.get("reasoning_default_effort", "") or "")
@@ -850,7 +859,7 @@ class Manager:
                 path_changed = old is None or old.get("path") != model.get("path")
                 if path_changed or model.get("mtp_capability", "unknown") == "unknown" or model.get("native_context", 0) <= 0 or model.get("reasoning_detection") not in ("gguf", "runtime"):
                     detected = inspect_gguf_capabilities(model["path"])
-                    apply_detected_model_capabilities(model, detected, reset_reasoning=path_changed)
+                    apply_detected_model_capabilities(model, detected, reset_for_path_change=path_changed)
         c = validate_config(incoming)
         backup = self.data / "backups"
         backup.mkdir(exist_ok=True)
