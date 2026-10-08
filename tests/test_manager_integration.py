@@ -49,9 +49,12 @@ def eventually(check, timeout=10.0):
 
 class ManagerIntegration(unittest.TestCase):
     def setUp(self):
-        runs = ROOT / "tests" / ".runs"
-        runs.mkdir(exist_ok=True)
-        self.run_dir = Path(tempfile.mkdtemp(prefix=self._testMethodName + "-", dir=runs))
+        # Keep mutable integration-test state out of the repository. Repos are
+        # commonly stored under OneDrive on Windows, whose sync/index hooks can
+        # transiently lock files during atomic replace operations.
+        self._run_tmp = tempfile.TemporaryDirectory(prefix="amiebl-" + self._testMethodName + "-")
+        self.addCleanup(self._run_tmp.cleanup)
+        self.run_dir = Path(self._run_tmp.name)
         self.data = self.run_dir / "data"
         self.data.mkdir()
         self.model_dir = self.run_dir / "models"
