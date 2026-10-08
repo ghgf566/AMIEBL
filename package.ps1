@@ -77,6 +77,13 @@ if ($PythonHome) {
         throw "-PythonHome 沒有 python.exe：$pythonSource"
     }
     Copy-Tree $pythonSource (Join-Path $portable 'runtime\python') @('__pycache__', 'Lib\test', 'Scripts\__pycache__')
+    # Embedded CPython intentionally omits the script directory from sys.path.
+    # Allow sibling backend imports without relying on the developer's Python.
+    Get-ChildItem -LiteralPath (Join-Path $portable 'runtime\python') -File -Filter 'python*._pth' | ForEach-Object {
+        if ('../../backend' -notin (Get-Content -LiteralPath $_.FullName)) {
+            Add-Content -LiteralPath $_.FullName -Value '../../backend' -Encoding ASCII
+        }
+    }
 }
 
 Copy-Item -LiteralPath (Join-Path $repo 'installer') -Destination (Join-Path $portable 'installer') -Recurse -Force

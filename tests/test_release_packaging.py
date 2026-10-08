@@ -62,6 +62,11 @@ class ReleasePackagingSafetyTests(unittest.TestCase):
         self.assertIn("$_.Extension -eq '.exe'", package)
         self.assertIn("'THIRD-PARTY-NOTICES.md'", package)
 
+    def test_embedded_python_can_import_sibling_backend_modules(self):
+        package = source("package.ps1")
+        self.assertIn("-Filter 'python*._pth'", package)
+        self.assertIn("'../../backend'", package)
+
     def test_apache_license_is_bundled_in_every_distribution(self):
         license_text = source("LICENSE")
         self.assertIn("Apache License", license_text[:100])
