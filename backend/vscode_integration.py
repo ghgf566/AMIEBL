@@ -104,7 +104,7 @@ def preview(config, data_dir):
             "api_url": f"http://127.0.0.1:{config['api_port']}/v1/chat/completions",
             "models_file": str(models_file), "agents_dir": str(agents_dir),
             "default_model_id": config["default_model_id"],
-            "profiles": [{"id": p["id"], "name": p["name"], "agent_name": p["agent_name"], "agent_sync_mode": p.get("agent_sync_mode", "preserve"), "max_tokens": p["max_tokens"]}
+            "profiles": [{"id": p["id"], "name": p["name"], "agent_name": p.get("agent_name") or p["name"], "agent_sync_mode": p.get("agent_sync_mode", "preserve"), "max_tokens": p["max_tokens"]}
                          for p in config["profiles"]],
             "summary": f"將在 VS Code 登錄 {model_count} 個實體模型，並處理 {agent_count} 個 Agent。預設只維護 AMIEBL 模式標記並保留 VS Code 手動修改；設為完整管理的 Agent 才會由 GUI 覆寫。原始設定會先備份；完成後需要重新載入 VS Code 視窗。",
             "message": "VS Code 模型清單只會顯示實體模型；使用模式由 .agent.md 中的 AMIEBL profile 標記選擇。Agent 不固定 customendpoint model，請在 Agent 視窗的模型選擇器選取本機模型。"}
@@ -166,7 +166,7 @@ def render_agent(profile):
     tools = json.dumps(profile.get("agent_tools", []), ensure_ascii=False)
     header = [
         "---",
-        "name: " + json.dumps(profile["agent_name"], ensure_ascii=False),
+        "name: " + json.dumps(profile.get("agent_name") or profile.get("name") or profile["id"], ensure_ascii=False),
         "description: " + json.dumps(profile.get("agent_description", ""), ensure_ascii=False),
         "tools: " + tools,
         "agents: []",
@@ -176,7 +176,7 @@ def render_agent(profile):
         "",
         f"AMIEBL_PROFILE:{profile['id']}",
         "",
-        profile["agent_instructions"].strip(),
+        (profile.get("agent_instructions") or "Answer the user's request clearly and use the available tools only as needed.").strip(),
         "",
     ]
     return "\n".join(header)
