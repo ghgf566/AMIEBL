@@ -827,6 +827,19 @@ class ManagerIntegration(unittest.TestCase):
         self.assertNotIn("--image-min-tokens", argv)
         self.assertNotIn("--no-reasoning-preserve", argv)
 
+    def test_invalid_main_gguf_is_rejected_before_engine_start(self):
+        invalid = self.model_dir / "invalid-main.gguf"
+        invalid.write_bytes(b"NOPE")
+        config = self.get("/manager/config")
+        model = next(x for x in config["models"] if x["id"] == "test-model")
+        model["path"] = str(invalid)
+        response = self.api("PUT", "/manager/config", json=config)
+        self.assertEqual(response.status_code, 200, response.text)
+        response = self.api("POST", "/manager/load", json={"model_id": "test-model"})
+        self.assertEqual(response.status_code, 200, response.text)
+        eventually(lambda: self.get("/manager/status")["state"] == "error")
+        self.assertEqual(self.events("start"), [])
+        self.assertIn("主模型不是有效的 GGUF", self.get("/manager/status")["last_error"])
     def test_invalid_vision_projector_is_rejected_before_engine_start(self):
         projector = self.run_dir / "not-a-projector.gguf"
         projector.write_bytes(b"not-gguf")
