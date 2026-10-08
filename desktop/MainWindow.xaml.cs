@@ -547,7 +547,8 @@ public partial class MainWindow : Window
         reasoningInfo.Children.Add(Text(J.B(model, "reasoning_budget_supported") ? "✓ 可使用 reasoning token budget" : "— 未偵測到可用的 reasoning token budget 標記", 11, true));
         string toggleKeys = string.Join(", ", J.A(model, "reasoning_toggle_keys").Select(x => x?.ToString()).Where(x => !string.IsNullOrWhiteSpace(x)));
         if (!string.IsNullOrWhiteSpace(toggleKeys)) reasoningInfo.Children.Add(Text("Template 控制：" + toggleKeys, 11, true));
-        reasoningInfo.Children.Add(Text("來源：" + (J.S(model, "reasoning_detection", "pending") == "gguf" ? "GGUF tokenizer.chat_template" : "尚未完成 GGUF 偵測 / 舊設定相容"), 11, true));
+        string reasoningSource = J.S(model, "reasoning_detection", "pending");
+        reasoningInfo.Children.Add(Text("來源：" + (reasoningSource == "runtime" ? "llama.cpp /props 驗證" : reasoningSource == "gguf" ? "GGUF tokenizer.chat_template" : "尚未完成 GGUF 偵測 / 舊設定相容"), 11, true));
         advanced.Children.Add(Card(reasoningInfo));
         panel.Children.Add(new Expander { Header = "進階採樣與能力設定", Content = advanced });
         async Task Save()
