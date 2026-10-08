@@ -436,17 +436,18 @@ public partial class MainWindow : Window
         var path = Field(panel, "模型 GGUF 路徑", originalPath); panel.Children.Add(Button("選擇模型檔案", () => { PickFile(path, "GGUF 模型|*.gguf"); return Task.CompletedTask; }));
         int nativeContext = J.I(model, "native_context", 0);
         int currentContext = J.I(model, "context", 32768);
-        int contextSliderMax = nativeContext > 0 ? Math.Max(2048, nativeContext) : Math.Max(131072, currentContext);
+        int contextSliderMin = nativeContext > 0 && nativeContext < 2048 ? 512 : 2048;
+        int contextSliderMax = nativeContext > 0 ? Math.Max(contextSliderMin, nativeContext) : Math.Max(131072, currentContext);
         var contextPanel = Section("上下文容量", nativeContext > 0 ? $"GGUF 宣告的原生上限：{nativeContext:N0} tokens" : "尚未偵測到模型原生上限；仍可直接輸入精確 token 數。");
         var context = new TextBox { Text = currentContext.ToString(CultureInfo.InvariantCulture), Margin = new Thickness(0, 0, 0, 6) };
         contextPanel.Children.Add(context);
-        double minContextLog = Math.Log(2048, 2);
+        double minContextLog = Math.Log(contextSliderMin, 2);
         double maxContextLog = Math.Log(contextSliderMax, 2);
-        var contextSlider = new Slider { Minimum = minContextLog, Maximum = maxContextLog, Value = Math.Clamp(Math.Log(Math.Max(2048, currentContext), 2), minContextLog, maxContextLog), TickFrequency = 1, IsSnapToTickEnabled = true, TickPlacement = System.Windows.Controls.Primitives.TickPlacement.BottomRight, SmallChange = 1, LargeChange = 1, Margin = new Thickness(0, 0, 0, 5) };
+        var contextSlider = new Slider { Minimum = minContextLog, Maximum = maxContextLog, Value = Math.Clamp(Math.Log(Math.Max(contextSliderMin, currentContext), 2), minContextLog, maxContextLog), TickFrequency = 1, IsSnapToTickEnabled = true, TickPlacement = System.Windows.Controls.Primitives.TickPlacement.BottomRight, SmallChange = 1, LargeChange = 1, Margin = new Thickness(0, 0, 0, 5) };
         contextPanel.Children.Add(contextSlider);
         var contextTicks = Text("", 11, true);
         var tickNames = new List<string>();
-        for (long value = 2048; value <= contextSliderMax && value <= 2097152; value *= 2) tickNames.Add(value >= 1048576 ? $"{value / 1048576.0:0.#}M" : $"{value / 1024}K");
+        for (long value = contextSliderMin; value <= contextSliderMax && value <= 2097152; value *= 2) tickNames.Add(value >= 1048576 ? $"{value / 1048576.0:0.#}M" : value >= 1024 ? $"{value / 1024.0:0.#}K" : $"{value}");
         if (tickNames.Count == 0 || (1L << (int)Math.Floor(maxContextLog)) < contextSliderMax) tickNames.Add(contextSliderMax >= 1048576 ? $"{contextSliderMax / 1048576.0:0.#}M" : $"{contextSliderMax / 1024.0:0.#}K");
         contextTicks.Text = string.Join("   ", tickNames);
         contextPanel.Children.Add(contextTicks);
@@ -455,7 +456,7 @@ public partial class MainWindow : Window
         {
             if (syncingContext) return;
             syncingContext = true;
-            int value = (int)Math.Clamp(Math.Round(Math.Pow(2, contextSlider.Value)), 2048, contextSliderMax);
+            int value = (int)Math.Clamp(Math.Round(Math.Pow(2, contextSlider.Value)), contextSliderMin, contextSliderMax);
             context.Text = value.ToString(CultureInfo.InvariantCulture);
             syncingContext = false;
             dirty = true;
@@ -466,7 +467,7 @@ public partial class MainWindow : Window
             dirty = true;
             if (!int.TryParse(context.Text.Trim(), out int value) || value <= 0) return;
             syncingContext = true;
-            contextSlider.Value = Math.Clamp(Math.Log(Math.Max(2048, value), 2), minContextLog, maxContextLog);
+            contextSlider.Value = Math.Clamp(Math.Log(Math.Max(contextSliderMin, value), 2), minContextLog, maxContextLog);
             syncingContext = false;
         };
         panel.Children.Add(contextPanel);
@@ -505,7 +506,7 @@ public partial class MainWindow : Window
             ("q4_1", "q4_1"), ("iq4_nl", "iq4_nl · 低記憶體"));
         int logicalThreads = Math.Max(1, Environment.ProcessorCount);
         int savedThreads = Math.Clamp(J.I(model, "cpu_threads", 0), 0, 4096);
-        int cpuSliderMax = Math.Max(logicalThreads, savedThreads);
+        int cpuSliderMax = Math.Min(4096, Math.Max(logicalThreads, savedThreads));
         var cpuPanel = Section("CPU 執行緒上限", "0 代表 Auto；指定數值時，生成與批次／上下文處理都會套用相同的執行緒上限。已匯入的較高值會保留，不會因為只開啟設定頁就被靜默改小。");
         var cpuValue = Text("", 12, true);
         var cpuSlider = new Slider { Minimum = 0, Maximum = cpuSliderMax, Value = savedThreads, TickFrequency = 1, IsSnapToTickEnabled = true, TickPlacement = System.Windows.Controls.Primitives.TickPlacement.BottomRight, SmallChange = 1, LargeChange = Math.Max(1, logicalThreads / 4), Margin = new Thickness(0, 0, 0, 4) };
