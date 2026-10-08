@@ -86,6 +86,7 @@ class ManagerIntegration(unittest.TestCase):
         self.env = os.environ.copy()
         self.env.update({"LMM_ENGINE_COMMAND_JSON": json.dumps([sys.executable, str(FAKE)]),
                          "LMM_SKIP_FIT": "1", "LMM_FAKE_EVENTS": str(self.events_file), "PYTHONUNBUFFERED": "1",
+                         "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1",
                          "LMM_FAKE_READY_DELAY_FILE": str(self.run_dir / "ready-delay")})
         self.log = (self.run_dir / "manager.log").open("w", encoding="utf-8")
         self.proc = subprocess.Popen([sys.executable, str(ROOT / "backend" / "manager.py"), "--data-dir", str(self.data),
@@ -94,14 +95,19 @@ class ManagerIntegration(unittest.TestCase):
                                     creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
         self.client = httpx.Client(base_url=self.base, timeout=25, trust_env=False)
         try:
-            eventually(lambda: self.client.get("/health").status_code == 200, 12)
+            def manager_ready():
+                if self.proc.poll() is not None:
+                    raise RuntimeError(f"manager exited during startup with code {self.proc.returncode}")
+                return self.client.get("/health").status_code == 200
+            eventually(manager_ready, 20)
             self.token = eventually(lambda: (self.data / "admin-token").read_text(encoding="utf-8").strip())
             self.headers = {"X-Manager-Token": self.token}
         except Exception:
-            self.proc.terminate()
-            self.proc.wait(timeout=5)
+            if self.proc.poll() is None:
+                self.proc.terminate()
+                self.proc.wait(timeout=5)
             self.log.close()
-            print((self.run_dir / "manager.log").read_text(encoding="utf-8"))
+            print((self.run_dir / "manager.log").read_text(encoding="utf-8", errors="replace"))
             raise
 
     def tearDown(self):
