@@ -122,8 +122,10 @@ def main():
                                    headers={"Content-Type": "application/octet-stream"})
             if response.status_code != 201 or not matches(response.json(), len(body), sha):
                 raise RuntimeError("Preflight upload did not verify")
+            with (work / name).open("wb") as file:
+                download(client, response.json(), file)
             api(client, "DELETE", f"/releases/assets/{response.json()['id']}")
-            print("PREFLIGHT PASS: draft access, exact tag, verified upload and own-asset deletion", flush=True)
+            print("PREFLIGHT PASS: draft access, exact tag, verified upload/download and own-asset deletion", flush=True)
             return
         marker = available.get(MANIFEST)
         if not marker or marker["size"] > 128 * 1024:
