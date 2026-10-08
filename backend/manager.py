@@ -596,11 +596,19 @@ class Manager:
             atomic_json(self.config_path, self.config)
         capability_changed = False
         for model in self.config["models"]:
-            if (model.get("mtp_capability", "unknown") == "unknown" or model.get("native_context", 0) <= 0) and Path(model["path"]).is_file():
+            if (model.get("mtp_capability", "unknown") == "unknown" or model.get("native_context", 0) <= 0 or model.get("reasoning_detection") != "gguf") and Path(model["path"]).is_file():
                 detected = inspect_gguf_capabilities(model["path"])
                 model["mtp_capability"] = detected["mtp_capability"]
                 model["mtp_layers"] = detected["mtp_layers"]
                 model["native_context"] = detected["native_context"]
+                if detected.get("reasoning_detection") == "gguf":
+                    model["reasoning_capability"] = detected["reasoning_capability"]
+                    model["reasoning_efforts"] = detected["reasoning_efforts"]
+                    model["reasoning_default_effort"] = detected["reasoning_default_effort"]
+                    model["reasoning_budget_supported"] = detected["reasoning_budget_supported"]
+                    model["reasoning_toggle_keys"] = detected["reasoning_toggle_keys"]
+                    model["reasoning_detection"] = "gguf"
+                    model["reasoning_supported"] = detected["reasoning_capability"] in ("toggle", "always")
                 if detected["mtp_capability"] != "available" and model.get("mtp") and model.get("mtp_source", "native") == "native":
                     model["mtp"] = False
                     model["mtp_draft_max"] = None
@@ -671,11 +679,19 @@ class Manager:
                     continue
                 old = previous.get(model.get("id"))
                 path_changed = old is None or old.get("path") != model.get("path")
-                if path_changed or model.get("mtp_capability", "unknown") == "unknown" or model.get("native_context", 0) <= 0:
+                if path_changed or model.get("mtp_capability", "unknown") == "unknown" or model.get("native_context", 0) <= 0 or model.get("reasoning_detection") != "gguf":
                     detected = inspect_gguf_capabilities(model["path"])
                     model["mtp_capability"] = detected["mtp_capability"]
                     model["mtp_layers"] = detected["mtp_layers"]
                     model["native_context"] = detected["native_context"]
+                    if detected.get("reasoning_detection") == "gguf":
+                        model["reasoning_capability"] = detected["reasoning_capability"]
+                        model["reasoning_efforts"] = detected["reasoning_efforts"]
+                        model["reasoning_default_effort"] = detected["reasoning_default_effort"]
+                        model["reasoning_budget_supported"] = detected["reasoning_budget_supported"]
+                        model["reasoning_toggle_keys"] = detected["reasoning_toggle_keys"]
+                        model["reasoning_detection"] = "gguf"
+                        model["reasoning_supported"] = detected["reasoning_capability"] in ("toggle", "always")
                     if detected["mtp_capability"] != "available" and model.get("mtp_source", "native") == "native":
                         model["mtp"] = False
                         model["mtp_draft_max"] = None
