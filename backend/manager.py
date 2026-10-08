@@ -725,6 +725,11 @@ class Manager:
                 model["mtp_capability"] = detected["mtp_capability"]
                 model["mtp_layers"] = detected["mtp_layers"]
                 model["native_context"] = detected["native_context"]
+                    if old is None and detected["native_context"] > 0 and model.get("context", 0) > detected["native_context"]:
+                        # New registrations start with a generic 32K context.
+                        # Older GGUFs can legitimately advertise a smaller
+                        # native window, so clamp only this initial default.
+                        model["context"] = detected["native_context"]
                 if detected.get("reasoning_detection") == "gguf":
                     model["reasoning_capability"] = detected["reasoning_capability"]
                     model["reasoning_efforts"] = detected["reasoning_efforts"]
