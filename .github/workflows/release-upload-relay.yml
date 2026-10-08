@@ -1,0 +1,30 @@
+name: Verified v1.0.0 asset relay
+
+on:
+  push:
+    branches: [release/v1.0.0-upload-relay]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: amiebl-v1-asset-relay
+  cancel-in-progress: false
+
+jobs:
+  relay:
+    if: github.repository == 'ghgf566/AMIEBL'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install HTTP client
+        run: python -m pip install httpx==0.28.1
+      - name: Reassemble verified assets into the existing draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python .github/scripts/release-relay.py
