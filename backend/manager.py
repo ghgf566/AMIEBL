@@ -740,13 +740,16 @@ class Manager:
                     model["mtp_capability"] = detected["mtp_capability"]
                     model["mtp_layers"] = detected["mtp_layers"]
                     model["native_context"] = detected["native_context"]
-                    if detected.get("reasoning_detection") == "gguf":
+                    if path_changed or detected.get("reasoning_detection") == "gguf":
+                        # A different GGUF must never inherit reasoning metadata
+                        # from the previous file. If the new template cannot be
+                        # inspected, store "unknown" instead of stale capabilities.
                         model["reasoning_capability"] = detected["reasoning_capability"]
                         model["reasoning_efforts"] = detected["reasoning_efforts"]
                         model["reasoning_default_effort"] = detected["reasoning_default_effort"]
                         model["reasoning_budget_supported"] = detected["reasoning_budget_supported"]
                         model["reasoning_toggle_keys"] = detected["reasoning_toggle_keys"]
-                        model["reasoning_detection"] = "gguf"
+                        model["reasoning_detection"] = detected.get("reasoning_detection", "pending")
                         model["reasoning_supported"] = detected["reasoning_capability"] in ("toggle", "always")
                     if detected["mtp_capability"] != "available" and model.get("mtp_source", "native") == "native":
                         model["mtp"] = False
