@@ -92,7 +92,7 @@ def default_config() -> dict:
             "log_retention_days": 7, "vscode_abort_watch": True,
             "models": [{"id": "qwen3.8-27b-local", "name": "Qwen3.8 27B", "path": str(model_path),
                         "mmproj": projector_value, "vision": bool(projector_value and Path(projector_value).is_file()), "context": 65536, "gpu_layers": 17,
-                        "auto_fit": True, "fit_target_enabled": False, "fit_target_mib": 2048, "cache_type": "q4_0", "mtp": True, "mtp_draft_max": None, "mtp_capability": "unknown", "mtp_layers": 0,
+                        "auto_fit": True, "fit_target_enabled": False, "fit_target_mib": 2048, "cache_type": "q4_0", "cpu_threads": 0, "native_context": 0, "mtp": True, "mtp_source": "native", "mtp_draft_path": "", "mtp_draft_max": None, "mtp_capability": "unknown", "mtp_layers": 0,
                         "keep_loaded": False, "idle_minutes": None, "default_profile_id": "coding",
                         "temperature": None, "top_p": None, "top_k": None, "min_p": None,
                         "reasoning_supported": True, "reasoning_efforts": ["low", "medium", "xhigh"]}],
@@ -221,7 +221,7 @@ def validate_config(value: Any) -> dict:
         if "fit_target_enabled" not in m:
             m["fit_target_enabled"] = True
         conservative = {"mmproj": "", "vision": False, "context": 8192, "gpu_layers": 0,
-                        "auto_fit": True, "fit_target_enabled": False, "fit_target_mib": 2048, "cache_type": "f16", "mtp": False, "mtp_draft_max": None, "mtp_capability": "unknown", "mtp_layers": 0,
+                        "auto_fit": True, "fit_target_enabled": False, "fit_target_mib": 2048, "cache_type": "f16", "cpu_threads": 0, "native_context": 0, "mtp": False, "mtp_source": "native", "mtp_draft_path": "", "mtp_draft_max": None, "mtp_capability": "unknown", "mtp_layers": 0,
                         "keep_loaded": False, "idle_minutes": None, "default_profile_id": c["default_profile_id"],
                         "temperature": None, "top_p": None, "top_k": None, "min_p": None,
                         "reasoning_supported": False, "reasoning_efforts": []}
@@ -237,6 +237,10 @@ def validate_config(value: Any) -> dict:
         if m["vision"] and not m["mmproj"]:
             raise ValueError("啟用視覺時請指定視覺模型。")
         number(m["context"], "上下文容量", 512, 2097152, True)
+        number(m.get("native_context", 0), "模型原生上下文", 0, 2097152, True)
+        if m.get("native_context", 0) > 0 and m["context"] > m["native_context"]:
+            raise ValueError(f"上下文容量不可超過此 GGUF 宣告的原生上限 {m['native_context']} tokens。")
+        number(m.get("cpu_threads", 0), "CPU 執行緒上限", 0, 4096, True)
         number(m["gpu_layers"], "GPU 層數", -1, 999, True)
         number(m["fit_target_mib"], "GPU 預留記憶體", 0, 1048576, True)
         if m.get("temperature") is not None:
@@ -247,6 +251,14 @@ def validate_config(value: Any) -> dict:
             number(m["top_k"], "top_k", 0, 100000, True)
         if m.get("min_p") is not None:
             number(m["min_p"], "min_p", 0, 1)
+        if m.get("mtp_source") not in ("native", "external"):
+            raise ValueError("MTP 來源只能是模型內建或外部 Draft。")
+        if not isinstance(m.get("mtp_draft_path"), str):
+            raise ValueError("MTP Draft 路徑必須是文字。")
+        if m.get("mtp") and m.get("mtp_source") == "native" and m.get("mtp_capability") != "available":
+            raise ValueError("此 GGUF 沒有可用的內建 MTP / NextN head，請改用外部 MTP Draft 或關閉 MTP。")
+        if m.get("mtp") and m.get("mtp_source") == "external" and not m.get("mtp_draft_path", "").strip():
+            raise ValueError("使用外部 MTP Draft 時請指定 GGUF 路徑。")
         if m.get("mtp_capability") not in ("available", "unavailable", "incomplete", "unknown"):
             raise ValueError("無效的 MTP 能力偵測狀態。")
         number(m.get("mtp_layers", 0), "MTP 層數", 0, 1024, True)
@@ -334,7 +346,7 @@ def _gguf_read_scalar(handle, value_type: int):
 def inspect_gguf_capabilities(path_value: str) -> dict:
     """Inspect only the GGUF header/tensor directory; model weights are never loaded."""
     path = Path(path_value)
-    result = {"mtp_capability": "unknown", "mtp_layers": 0, "gguf_architecture": "", "mtp_tensor_count": 0}
+    result = {"mtp_capability": "unknown", "mtp_layers": 0, "gguf_architecture": "", "native_context": 0, "mtp_tensor_count": 0}
     if not path.is_file():
         return result
     try:
@@ -350,6 +362,7 @@ def inspect_gguf_capabilities(path_value: str) -> dict:
                 return result
 
             nextn_layers = 0
+            native_context = 0
             architecture = ""
             for _ in range(kv_count):
                 key = _gguf_string(handle, 65535)
@@ -359,6 +372,10 @@ def inspect_gguf_capabilities(path_value: str) -> dict:
                 elif key.endswith(".nextn_predict_layers") and value_type in _GGUF_FIXED_TYPES:
                     raw = _gguf_read_scalar(handle, value_type)
                     nextn_layers = max(nextn_layers, int(raw))
+                elif key.endswith(".context_length") and value_type in _GGUF_FIXED_TYPES:
+                    raw = int(_gguf_read_scalar(handle, value_type))
+                    if 512 <= raw <= 2097152:
+                        native_context = max(native_context, raw)
                 else:
                     _gguf_skip_value(handle, value_type)
 
@@ -373,6 +390,7 @@ def inspect_gguf_capabilities(path_value: str) -> dict:
                     nextn_tensors += 1
 
             result["gguf_architecture"] = architecture
+            result["native_context"] = native_context
             result["mtp_layers"] = nextn_layers
             result["mtp_tensor_count"] = nextn_tensors
             if nextn_layers > 0 and nextn_tensors > 0:
@@ -451,6 +469,7 @@ class Manager:
                 detected = inspect_gguf_capabilities(model["path"])
                 model["mtp_capability"] = detected["mtp_capability"]
                 model["mtp_layers"] = detected["mtp_layers"]
+                model["native_context"] = detected["native_context"]
                 if detected["mtp_capability"] != "available" and model.get("mtp"):
                     model["mtp"] = False
                     model["mtp_draft_max"] = None
@@ -525,6 +544,7 @@ class Manager:
                     detected = inspect_gguf_capabilities(model["path"])
                     model["mtp_capability"] = detected["mtp_capability"]
                     model["mtp_layers"] = detected["mtp_layers"]
+                    model["native_context"] = detected["native_context"]
                     if detected["mtp_capability"] != "available":
                         model["mtp"] = False
                         model["mtp_draft_max"] = None
@@ -682,9 +702,20 @@ class Manager:
                 if model["vision"] and not Path(model["mmproj"]).is_file():
                     raise ValueError("視覺模型檔案不存在，請重新指定。")
                 if model.get("mtp"):
-                    detected_mtp = inspect_gguf_capabilities(model["path"])
-                    if detected_mtp["mtp_capability"] != "available":
-                        raise ValueError("此 GGUF 未偵測到可用的 MTP／NextN 權重，請關閉 MTP 或改用包含 MTP head 的模型。")
+                    if model.get("mtp_source", "native") == "native":
+                        detected_mtp = inspect_gguf_capabilities(model["path"])
+                        if detected_mtp["mtp_capability"] != "available":
+                            raise ValueError("此 GGUF 未偵測到可用的內建 MTP／NextN 權重，請改用外部 MTP Draft 或關閉 MTP。")
+                    else:
+                        draft_path = Path(model.get("mtp_draft_path", ""))
+                        if not draft_path.is_file():
+                            raise ValueError("找不到外部 MTP Draft GGUF，請重新指定檔案。")
+                        try:
+                            with draft_path.open("rb") as draft_file:
+                                if draft_file.read(4) != b"GGUF":
+                                    raise ValueError("指定的外部 MTP Draft 不是有效的 GGUF 檔案。")
+                        except OSError as exc:
+                            raise ValueError("無法讀取外部 MTP Draft GGUF。") from exc
                 engine_port = self.engine_port_override or self.config["engine_port"]
                 if not free_port(engine_port):
                     raise ValueError(f"模型引擎連接埠 {engine_port} 已被使用。請停止舊啟動器或更換連接埠。")
@@ -692,14 +723,18 @@ class Manager:
                 if not Path(command[0]).is_file():
                     raise ValueError("找不到 llama-server.exe，請確認 llama.cpp 資料夾。")
                 layers = await self.fit_layers(model)
+                thread_limit = int(model.get("cpu_threads", 0) or 0)
+                thread_arg = str(thread_limit if thread_limit > 0 else -1)
                 args = ["-m", model["path"], "--alias", model["id"], "-c", str(model["context"]),
                         "-ctk", model["cache_type"], "-ctv", model["cache_type"], "--fit", "off", "-ngl", str(layers),
-                        "-t", "-1", "-tb", "-1", "--jinja", "--reasoning-effort", "default", "--reasoning-budget", "-1",
+                        "-t", thread_arg, "-tb", thread_arg, "--jinja", "--reasoning-effort", "default", "--reasoning-budget", "-1",
                         "--no-reasoning-preserve", "--timeout", "18000", "--sse-ping-interval", "10",
                         "--host", "127.0.0.1", "--port", str(engine_port), "-np", "1", "--slots", "--metrics"]
                 if model["mtp"]:
                     draft_max = model.get("mtp_draft_max")
                     args += ["--spec-type", "draft-mtp", "--spec-draft-n-max", str(draft_max if draft_max is not None else 2)]
+                    if model.get("mtp_source", "native") == "external":
+                        args += ["--spec-draft-model", model["mtp_draft_path"]]
                 if model["vision"]:
                     args += ["--mmproj", model["mmproj"], "--image-min-tokens", "1024"]
                 self.process = subprocess.Popen(command + args, cwd=self.config["engine_dir"], stdout=subprocess.PIPE,
