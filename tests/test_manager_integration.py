@@ -394,7 +394,7 @@ class ManagerIntegration(unittest.TestCase):
         self.assertIn("AMIEBL_PROFILE:coding", result)
         self.assertNotIn("AMIEBL_PROFILE:old-profile", result)
     def test_vscode_preview_exposes_physical_models_and_profile_agents(self):
-        r = self.client.get("/manager/vscode/preview")
+        r = self.api("GET", "/manager/vscode/preview")
         self.assertEqual(r.status_code, 200, r.text)
         body = r.json()
         self.assertEqual(body["model_count"], 1)
