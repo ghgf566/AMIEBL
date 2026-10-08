@@ -15,6 +15,8 @@ class ReleasePackagingSafetyTests(unittest.TestCase):
     def test_inno_does_not_install_portable_data_or_delete_user_data(self):
         iss = source("installer/LocalModelManager.iss")
         self.assertNotIn("[Registry]", iss)
+        self.assertIn("UninstallLogMode=overwrite", iss)
+        self.assertIn("PrepareToInstall", iss)
         self.assertNotRegex(iss, r"(?i)Type:\s*filesandordirs")
         self.assertNotIn('"{localappdata}\\LocalModelManager"', iss)
         self.assertIn(r"\portable.flag", iss)
