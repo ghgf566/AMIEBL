@@ -42,7 +42,7 @@ class IntegrationTests(unittest.TestCase):
         actual = json.loads(self.models.read_text(encoding='utf-8'))
         self.assertEqual(actual[0], providers[0])
         self.assertEqual(actual[1]['apiKey'], 'retain-me')
-        self.assertEqual([m['id'] for m in actual[1]['models']], ['unrelated','qwen','qwen::coding'])
+        self.assertEqual([m['id'] for m in actual[1]['models']], ['unrelated','qwen'])
         self.assertEqual(actual[1]['models'][-1]['maxOutputTokens'], 8192)
         source = agent.read_text(encoding='utf-8')
         self.assertIn('tools: [execute, custom/tool]', source)
@@ -58,7 +58,7 @@ class IntegrationTests(unittest.TestCase):
         second['profiles'] = [{'id':'quick-chat','name':'Quick','max_tokens':4096}]
         integration.apply(second, self.root / 'data')
         entries = json.loads(self.models.read_text(encoding='utf-8'))[0]['models']
-        self.assertEqual([m['id'] for m in entries], ['qwen', 'qwen::quick-chat'])
+        self.assertEqual([m['id'] for m in entries], ['qwen'])
 
     def test_invalid_agent_does_not_partially_write_settings(self):
         self.models.write_text('[]', encoding='utf-8')
@@ -70,7 +70,7 @@ class IntegrationTests(unittest.TestCase):
     def test_preview_does_not_touch_any_configuration(self):
         self.models.write_text('[]', encoding='utf-8')
         result = integration.preview(self.config, self.root / 'data')
-        self.assertEqual(result['model_count'], 2)
+        self.assertEqual(result['model_count'], 1)
         self.assertEqual(self.models.read_text(encoding='utf-8'), '[]')
         self.assertEqual(list(self.agents.iterdir()), [])
         self.assertFalse((self.root / 'data').exists())
