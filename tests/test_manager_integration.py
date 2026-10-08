@@ -398,6 +398,30 @@ class ManagerIntegration(unittest.TestCase):
         self.assertEqual(rec["reasoning_level"], "deep")
         self.assertIsNone(rec["effort"])
         self.assertGreater(rec["thinking_budget"], 0)
+    def test_custom_budget_survives_unknown_reasoning_capability(self):
+        config = self.get("/manager/config")
+        model = next(x for x in config["models"] if x["id"] == "test-model")
+        model.update(
+            reasoning_capability="unknown",
+            reasoning_efforts=[],
+            reasoning_default_effort="",
+            reasoning_budget_supported=False,
+            reasoning_toggle_keys=[],
+            reasoning_detection="legacy",
+        )
+        profile = next(x for x in config["profiles"] if x["id"] == "coding")
+        profile.update(thinking_mode="on", reasoning_level="balanced", budget_mode="custom", thinking_budget=321)
+        response = self.api("PUT", "/manager/config", json=config)
+        self.assertEqual(response.status_code, 200, response.text)
+        r = self.completion()
+        self.assertEqual(r.status_code, 200, r.text)
+        forwarded = self.events("post")[-1]["body"]
+        self.assertEqual(forwarded["thinking_budget_tokens"], 321)
+        self.assertNotIn("reasoning_effort", forwarded)
+        self.assertNotIn("chat_template_kwargs", forwarded)
+        rec = eventually(lambda: next((x for x in self.records() if x["phase"] == "completed"), None))
+        self.assertEqual(rec["thinking_budget"], 321)
+        self.assertIn("尚未確認", rec["decision"])
     def test_client_reasoning_override_skips_classifier(self):
         profiles = copy.deepcopy(self.get("/manager/config")["profiles"])
         profiles[0]["thinking_mode"] = "auto"
@@ -847,6 +871,18 @@ class ManagerIntegration(unittest.TestCase):
                 self.assertEqual(self.get("/manager/config"), original)
                 self.assertEqual(json.loads((self.data / "config.json").read_text(encoding="utf-8")), original)
 
+    def test_log_retention_change_prunes_existing_request_body_files_immediately(self):
+        body_dir = self.data / "request-bodies"
+        body_dir.mkdir(exist_ok=True)
+        old_file = body_dir / "old.json"
+        old_file.write_text('{"old": true}', encoding="utf-8")
+        old_time = time.time() - 3 * 86400
+        os.utime(old_file, (old_time, old_time))
+        config = self.get("/manager/config")
+        config["log_retention_days"] = 1
+        response = self.api("PUT", "/manager/config", json=config)
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertFalse(old_file.exists())
     def test_prompt_content_is_absent_from_default_logs_and_request_summaries(self):
         sentinel = "PRIVATE_REQUEST_CONTENT_7e3c9a"
         response = self.completion(sentinel)
