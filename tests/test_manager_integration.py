@@ -339,6 +339,26 @@ class ManagerIntegration(unittest.TestCase):
         self.assertEqual(body["model_count"], 1)
         self.assertEqual(body["agent_count"], 2)
         self.assertTrue(all("agent_name" in p for p in body["profiles"]))
+    def test_external_mtp_draft_and_cpu_thread_limit_reach_engine_args(self):
+        draft = self.run_dir / "mtp-draft.gguf"
+        draft.write_bytes(b"GGUF")
+        config = self.get("/manager/config")
+        model = next(x for x in config["models"] if x["id"] == "test-model")
+        model["cpu_threads"] = 3
+        model["mtp"] = True
+        model["mtp_source"] = "external"
+        model["mtp_draft_path"] = str(draft)
+        model["mtp_draft_max"] = 2
+        response = self.api("PUT", "/manager/config", json=config)
+        self.assertEqual(response.status_code, 200, response.text)
+        self.load()
+        argv = self.events("start")[-1]["argv"]
+        self.assertIn("--spec-type", argv)
+        self.assertIn("draft-mtp", argv)
+        self.assertIn("--spec-draft-model", argv)
+        self.assertIn(str(draft), argv)
+        self.assertEqual(argv[argv.index("-t") + 1], "3")
+        self.assertEqual(argv[argv.index("-tb") + 1], "3")
     def test_unknown_model_is_rejected_without_loading(self):
         r = self.completion(model="not-a-real-model")
         self.assertGreaterEqual(r.status_code, 400, r.text)
