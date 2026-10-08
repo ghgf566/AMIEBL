@@ -81,6 +81,13 @@ class AtomicWriteTests(unittest.TestCase):
             self.assertEqual(target.read_text(encoding="utf-8"), "ok\n")
             self.assertEqual(calls, 2)
 
+class StartupMigrationTests(unittest.TestCase):
+    def test_startup_normalization_clamps_legacy_context_without_weakening_put_validation(self):
+        raw = {"models": [{"context": 32768, "native_context": 8192}]}
+        normalized = manager.normalize_startup_config(raw)
+        self.assertEqual(normalized["models"][0]["context"], 8192)
+        self.assertEqual(raw["models"][0]["context"], 32768)
+
 class CapabilityMergeTests(unittest.TestCase):
     def test_detection_clamps_context_and_resets_stale_reasoning_on_path_change(self):
         model = {
