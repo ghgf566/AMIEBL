@@ -697,6 +697,26 @@ class ManagerIntegration(unittest.TestCase):
         self.assertEqual(argv[argv.index("-ctv") + 1], "q4_0")
         self.assertEqual(argv[argv.index("-ngl") + 1], "-1")
 
+    def test_pending_load_settings_auto_reload_before_next_inference(self):
+        self.load()
+        config = self.get("/manager/config")
+        model = next(x for x in config["models"] if x["id"] == "test-model")
+        model.update(context=4096, cpu_threads=2, cache_type="q8_0")
+        response = self.api("PUT", "/manager/config", json=config)
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertTrue(self.get("/manager/status")["pending_config"])
+        self.assertEqual(len(self.events("start")), 1)
+
+        r = self.completion(max_tokens=3000)
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(len(self.events("start")), 2)
+        argv = self.events("start")[-1]["argv"]
+        self.assertEqual(argv[argv.index("-c") + 1], "4096")
+        self.assertEqual(argv[argv.index("-t") + 1], "2")
+        self.assertEqual(argv[argv.index("-ctk") + 1], "q8_0")
+        self.assertFalse(self.get("/manager/status")["pending_config"])
+        forwarded = self.events("post")[-1]["body"]
+        self.assertLessEqual(forwarded["max_tokens"], 3000)
     def test_request_time_model_settings_apply_without_engine_reload(self):
         self.load()
         config = self.get("/manager/config")
