@@ -95,13 +95,13 @@ def default_config() -> dict:
                         "auto_fit": True, "fit_target_enabled": False, "fit_target_mib": 2048, "cache_type": "q4_0", "cpu_threads": 0, "native_context": 0, "mtp": True, "mtp_source": "native", "mtp_draft_path": "", "mtp_draft_max": None, "mtp_capability": "unknown", "mtp_layers": 0,
                         "keep_loaded": False, "idle_minutes": None, "default_profile_id": "coding",
                         "temperature": None, "top_p": None, "top_k": None, "min_p": None,
-                        "reasoning_supported": True, "reasoning_efforts": ["low", "medium", "xhigh"]}],
-            "profiles": [{"id": ident, "name": name, "thinking_mode": "auto", "effort": effort,
-                          "thinking_budget": budget, "max_tokens": cap}
-                         for ident, name, effort, budget, cap in
-                         [("quick-chat", "Quick Chat", "low", 512, 4096),
-                          ("coding", "Coding", "medium", 1536, 8192),
-                          ("deep-coding", "Deep Coding", "xhigh", 4096, 12288)]]}
+                        "reasoning_supported": True, "reasoning_capability": "unknown", "reasoning_efforts": [], "reasoning_default_effort": "", "reasoning_budget_supported": False, "reasoning_toggle_keys": [], "reasoning_detection": "pending"}],
+            "profiles": [{"id": ident, "name": name, "thinking_mode": "auto", "reasoning_level": level,
+                          "budget_mode": "auto", "thinking_budget": budget, "max_tokens": cap}
+                         for ident, name, level, budget, cap in
+                         [("quick-chat", "Quick Chat", "light", 512, 4096),
+                          ("coding", "Coding", "balanced", 1536, 8192),
+                          ("deep-coding", "Deep Coding", "extreme", 4096, 12288)]]}
 
 
 def number(value, name, minimum, maximum, integer=False):
@@ -189,12 +189,23 @@ def validate_config(value: Any) -> dict:
             p.setdefault(key, val)
         if p.get("thinking_mode") not in ("auto", "on", "off", "model"):
             raise ValueError("無效的思考策略。")
-        if p.get("effort") not in ("low", "medium", "high", "xhigh"):
-            raise ValueError("無效的思考程度。")
+        # Migrate the old model-specific effort field into AMIEBL's abstract
+        # reasoning level. Keep old fields readable so existing configs and
+        # external tooling do not break during the transition.
+        if "reasoning_level" not in p:
+            legacy = p.get("effort", "medium")
+            p["reasoning_level"] = {"low": "light", "medium": "balanced", "high": "deep", "xhigh": "extreme"}.get(legacy, "balanced")
+        if p.get("reasoning_level") not in ("light", "balanced", "deep", "extreme"):
+            raise ValueError("無效的 AMIEBL 思考強度。")
+        if "budget_mode" not in p:
+            p["budget_mode"] = "custom" if "thinking_budget" in p else "auto"
+        if p.get("budget_mode") not in ("auto", "custom"):
+            raise ValueError("無效的思考預算模式。")
+        p.setdefault("thinking_budget", 1536)
         number(p.get("max_tokens"), "總生成上限", 1, 1048576, True)
         number(p.get("thinking_budget"), "思考預算", 0, 1048576, True)
-        if p["thinking_budget"] >= p["max_tokens"] and p["thinking_mode"] != "off":
-            raise ValueError("思考預算必須小於總生成上限，為回答保留空間。")
+        if p["budget_mode"] == "custom" and p["thinking_budget"] >= p["max_tokens"] and p["thinking_mode"] != "off":
+            raise ValueError("自訂思考預算必須小於總生成上限，為回答保留空間。")
         if p.get("agent_sync_mode") not in ("preserve", "managed"):
             raise ValueError("無效的 VS Code Agent 同步方式。")
         if not isinstance(p.get("agent_name"), str) or not p["agent_name"].strip():
@@ -220,11 +231,19 @@ def validate_config(value: Any) -> dict:
         # behavior during migration; newly created models default to llama.cpp.
         if "fit_target_enabled" not in m:
             m["fit_target_enabled"] = True
+        if "reasoning_capability" not in m:
+            legacy_supported = bool(m.get("reasoning_supported", False))
+            m["reasoning_capability"] = "toggle" if legacy_supported else "unknown"
+            m["reasoning_detection"] = "legacy"
+            m.setdefault("reasoning_default_effort", "")
+            m.setdefault("reasoning_budget_supported", legacy_supported)
+            m.setdefault("reasoning_toggle_keys", ["enable_thinking"] if legacy_supported else [])
         conservative = {"mmproj": "", "vision": False, "context": 8192, "gpu_layers": 0,
                         "auto_fit": True, "fit_target_enabled": False, "fit_target_mib": 2048, "cache_type": "f16", "cpu_threads": 0, "native_context": 0, "mtp": False, "mtp_source": "native", "mtp_draft_path": "", "mtp_draft_max": None, "mtp_capability": "unknown", "mtp_layers": 0,
                         "keep_loaded": False, "idle_minutes": None, "default_profile_id": c["default_profile_id"],
                         "temperature": None, "top_p": None, "top_k": None, "min_p": None,
-                        "reasoning_supported": False, "reasoning_efforts": []}
+                        "reasoning_supported": False, "reasoning_capability": "unknown", "reasoning_efforts": [],
+                        "reasoning_default_effort": "", "reasoning_budget_supported": False, "reasoning_toggle_keys": [], "reasoning_detection": "pending"}
         for key, val in conservative.items():
             m.setdefault(key, val)
         if not isinstance(m.get("path"), str) or not m["path"].strip():
@@ -271,8 +290,23 @@ def validate_config(value: Any) -> dict:
             raise ValueError("不支援此 KV cache 精度。")
         if m["default_profile_id"] not in ids["profiles"]:
             raise ValueError("模型指定的使用模式不存在。")
-        if not isinstance(m["reasoning_efforts"], list) or any(e not in ("low", "medium", "high", "xhigh") for e in m["reasoning_efforts"]):
-            raise ValueError("不支援的思考程度清單。")
+        if m.get("reasoning_capability") not in ("unknown", "none", "always", "toggle"):
+            raise ValueError("無效的 reasoning 能力狀態。")
+        allowed_efforts = ("minimal", "low", "medium", "high", "xhigh", "max")
+        if not isinstance(m["reasoning_efforts"], list) or any(e not in allowed_efforts for e in m["reasoning_efforts"]):
+            raise ValueError("不支援的模型原生 reasoning effort 清單。")
+        if not isinstance(m.get("reasoning_default_effort"), str):
+            raise ValueError("模型預設 reasoning effort 必須是文字。")
+        if m["reasoning_default_effort"] and m["reasoning_default_effort"] not in allowed_efforts:
+            raise ValueError("模型預設 reasoning effort 不在支援清單。")
+        if not isinstance(m.get("reasoning_budget_supported"), bool):
+            raise ValueError("reasoning_budget_supported 必須是布林值。")
+        if not isinstance(m.get("reasoning_toggle_keys"), list) or any(
+            key not in ("enable_thinking", "thinking", "add_nothink_token") for key in m["reasoning_toggle_keys"]
+        ):
+            raise ValueError("無效的 reasoning toggle key。")
+        if m.get("reasoning_detection") not in ("pending", "legacy", "gguf"):
+            raise ValueError("無效的 reasoning 能力來源。")
     return c
 
 
