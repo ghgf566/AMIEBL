@@ -31,6 +31,8 @@ Ollama／SGLang／vLLM 留至 2.0.0；目前保留 engine_id 與來源／套件�
 
 ## 儲存庫定位
 
+原生 AMIEBL 執行不依賴 Python 或 .NET：GUI 為 C++/WinRT，管理服務為 Rust，推理由獨立 llama.cpp server 提供。Python 及 .NET 僅留作開發測試與舊版參考；目前舊 installer 尚未完成原生替換，不能把它視為新的正式交付。驗收完成後再整理或封存參考實作，不要求使用者安裝 Python。
+
 - `native-core/`、`native-gui/`：持續開發的原生產品。
 - `native-core/ENGINES.md`：引擎政策、API、相容條件與限制。
 - `migration/v1.1.0/STATUS.md`、`PARITY_CONTRACT.md`：遷移歷史及發行契約。
