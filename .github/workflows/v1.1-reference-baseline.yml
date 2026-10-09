@@ -35,7 +35,7 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
       - name: Run native Rust core unit tests
-        run: cargo test --manifest-path native-core/Cargo.toml --locked
+        run: cargo test --manifest-path native-core/Cargo.toml
       - name: State release limitation
         shell: pwsh
         run: Write-Host 'REFERENCE TESTS ONLY. Rust HTTP parity, C++/WinRT GUI parity and clean Windows runtime installation are NOT YET verified.'
