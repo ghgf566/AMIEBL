@@ -191,9 +191,9 @@ fn validate_profile(value: &mut Value) -> ValidationResult<()> {
     check_number(&p["max_tokens"], "總生成上限", 1., 1048576., true)?;
     check_number(&p["thinking_budget"], "思考預算", 0., 1048576., true)?;
     if p["budget_mode"] == "custom" && (p["thinking_mode"] == "auto" || p["thinking_mode"] == "on") {
-        let cap = p["max_tokens"].as_u64().unwrap_or(0);
+        let cap = p["max_tokens"].as_f64().unwrap_or(0.0) as u64;
         let reserve = u64::min(256, u64::max(1, cap / 4));
-        if p["thinking_budget"].as_u64().unwrap_or(u64::MAX) > cap.saturating_sub(reserve) {
+        if (p["thinking_budget"].as_f64().unwrap_or(f64::INFINITY) as u64) > cap.saturating_sub(reserve) {
             return Err(format!("自訂思考預算過高；總生成上限 {cap} 至少需保留 {reserve} tokens 給回答與工具呼叫。"));
         }
     }
@@ -245,7 +245,7 @@ fn validate_model(value: &mut Value, default_profile: &str, ids: &HashSet<String
         ("cpu_threads","CPU 執行緒上限",0.,4096.),("gpu_layers","GPU 層數",-1.,999.),
         ("fit_target_mib","GPU 預留記憶體",0.,1048576.),("mtp_layers","MTP 層數",0.,1024.)
     ] { check_number(&m[key],name,min,max,true)?; }
-    if m["native_context"].as_i64().unwrap_or(0) > 0 && m["context"].as_i64().unwrap_or(0) > m["native_context"].as_i64().unwrap_or(0) {
+    if m["native_context"].as_f64().unwrap_or(0.0) > 0.0 && m["context"].as_f64().unwrap_or(0.0) > m["native_context"].as_f64().unwrap_or(0.0) {
         return Err(format!("上下文容量不可超過此 GGUF 宣告的原生上限 {} tokens。", m["native_context"]));
     }
     for (key, lo, hi, integer) in [("temperature",0.,5.,false),("top_p",0.,1.,false),
@@ -300,7 +300,7 @@ pub fn normalize_startup_config(mut value: Value) -> Value {
                 let native = map.get("native_context").and_then(Value::as_f64);
                 if let (Some(context),Some(native)) = (context,native) {
                     if context.is_finite() && native.is_finite() && native > 0. && context > native {
-                        map.insert("context".into(), json!(native as u64));
+                        map.insert("context".into(), if native.fract() == 0.0 { json!(native as u64) } else { json!(native) });
                     }
                 }
             }
@@ -372,6 +372,13 @@ mod tests {
         assert_eq!(out["profiles"][0]["effort"],"high");
         assert_eq!(out["profiles"][0]["budget_mode"],"custom");
         assert_eq!(out["profiles"][0]["agent_sync_mode"],"preserve");
+    }
+    #[test]
+    fn accepts_integer_valued_json_floats_like_python() {
+        let mut c = default_config();
+        c["profiles"][0]["max_tokens"] = json!(4096.0);
+        c["profiles"][0]["thinking_budget"] = json!(512.0);
+        assert!(validate_config(c).is_ok());
     }
     #[test]
     fn rejects_invalid_schema_ports_and_duplicate_ids() {
