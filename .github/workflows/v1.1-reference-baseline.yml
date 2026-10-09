@@ -5,6 +5,10 @@ on:
     branches: [refactor/v1.1.0-rust-cpp-winui3]
   workflow_dispatch:
 
+concurrency:
+  group: v11-reference-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
