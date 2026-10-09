@@ -1,0 +1,131 @@
+{
+  "ok": true,
+  "editor_refresh_verified": true,
+  "layout_animation_verified": true,
+  "navigation_pane_verified": true,
+  "render_frames_verified": true,
+  "animation_samples": [
+    {
+      "panel": "\u6A21\u578B\u4F4D\u7F6E",
+      "open": true,
+      "frames": 21,
+      "max_interval_ms": 14.56
+    },
+    {
+      "panel": "\u6A21\u578B\u4F4D\u7F6E",
+      "open": false,
+      "frames": 20,
+      "max_interval_ms": 15.26
+    },
+    {
+      "panel": "\u6A21\u578B\u4F4D\u7F6E",
+      "open": true,
+      "frames": 21,
+      "max_interval_ms": 14.1
+    },
+    {
+      "panel": "\u6A21\u578B\u4F4D\u7F6E",
+      "open": false,
+      "frames": 21,
+      "max_interval_ms": 15.52
+    },
+    {
+      "panel": "\u670D\u52D9\u7D00\u9304",
+      "open": true,
+      "frames": 20,
+      "max_interval_ms": 13.42
+    },
+    {
+      "panel": "\u670D\u52D9\u7D00\u9304",
+      "open": false,
+      "frames": 21,
+      "max_interval_ms": 13.57
+    },
+    {
+      "panel": "\u670D\u52D9\u7D00\u9304",
+      "open": true,
+      "frames": 21,
+      "max_interval_ms": 13.49
+    },
+    {
+      "panel": "\u670D\u52D9\u7D00\u9304",
+      "open": false,
+      "frames": 21,
+      "max_interval_ms": 13.44
+    }
+  ],
+  "overview_scroll_verified": true,
+  "editor_reveal_verified": true,
+  "exit_visibility_verified": true,
+  "anchored_expanders_verified": true,
+  "mtp_dependency_verified": true,
+  "system_footer_verified": true,
+  "fixed_footer_verified": true,
+  "slider_sync_verified": true,
+  "model_locations_verified": true,
+  "rapid_navigation_verified": true,
+  "pages": [
+    {
+      "page": "\u7E3D\u89BD",
+      "rendered": true,
+      "width": 1224,
+      "height": 821
+    },
+    {
+      "page": "\u5C0E\u89BD\u5217\u7CBE\u7C21",
+      "rendered": true,
+      "width": 1224,
+      "height": 821
+    },
+    {
+      "page": "\u6A21\u578B\u5EAB",
+      "rendered": true,
+      "width": 1224,
+      "height": 821
+    },
+    {
+      "page": "\u6A21\u578B\u5EAB\u6548\u80FD",
+      "rendered": true,
+      "width": 1224,
+      "height": 821
+    },
+    {
+      "page": "\u4F7F\u7528\u6A21\u5F0F",
+      "rendered": true,
+      "width": 1224,
+      "height": 821
+    },
+    {
+      "page": "\u601D\u8003\u9810\u7B97",
+      "rendered": true,
+      "width": 1224,
+      "height": 821
+    },
+    {
+      "page": "\u4EFB\u52D9\u8207\u7D00\u9304",
+      "rendered": true,
+      "width": 1224,
+      "height": 821
+    },
+    {
+      "page": "\u670D\u52D9\u7D00\u9304\u5C55\u958B",
+      "rendered": true,
+      "width": 1224,
+      "height": 821
+    },
+    {
+      "page": "\u6A21\u578B\u4F4D\u7F6E\u5C55\u958B",
+      "rendered": true,
+      "width": 1224,
+      "height": 821
+    },
+    {
+      "page": "\u7CFB\u7D71",
+      "rendered": true,
+      "width": 1224,
+      "height": 821
+    }
+  ],
+  "model_loaded": false,
+  "autostart_changed": false
+}
