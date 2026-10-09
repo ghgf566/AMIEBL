@@ -7,7 +7,7 @@
 
 use chrono::Local;
 use regex::Regex;
-use serde_json::{json, Map, Value};
+use serde_json::{json, Value};
 use std::collections::HashSet;
 use std::fs;
 use std::io::Write;

@@ -11,3 +11,5 @@ pub mod vscode;
 pub mod storage;
 
 pub mod gguf;
+
+pub mod request;

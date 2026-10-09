@@ -31,8 +31,9 @@ def http(base, endpoint, *, token=None, origin=None):
         with urllib.request.urlopen(request,timeout=5) as reply:
             return reply.status,json.loads(reply.read()),dict(reply.headers)
     except urllib.error.HTTPError as error:
-        raw=error.read()
-        return error.code,(json.loads(raw) if raw else None),dict(error.headers)
+        with error:
+            raw=error.read()
+            return error.code,(json.loads(raw) if raw else None),dict(error.headers)
 
 class NativePreviewSmokeTests(unittest.TestCase):
     def setUp(self):

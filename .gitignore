@@ -2,6 +2,7 @@
 # .NET / WPF
 # =========================
 **/bin/
+!native-core/src/bin/
 **/obj/
 .vs/
 *.user
@@ -34,6 +35,7 @@ publish/
 release/
 outputs/
 portable/
+native-core/target/
 
 # =========================
 # Models

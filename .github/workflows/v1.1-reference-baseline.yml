@@ -31,21 +31,27 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
       - name: Run native Rust core unit tests
-        run: cargo test --manifest-path native-core/Cargo.toml
+        run: cargo test --locked --manifest-path native-core/Cargo.toml
       - name: Compile Rust configuration differential-test probe
-        run: cargo build --manifest-path native-core/Cargo.toml --bin config-probe
+        run: cargo build --locked --manifest-path native-core/Cargo.toml --bin config-probe
       - name: Compare Rust config behavior with Python v1.0.0
         run: python -m unittest discover -s tests -p "test_native_config_parity.py" -v
       - name: Compile native VS Code compatibility probe
-        run: cargo build --manifest-path native-core/Cargo.toml --bin vscode-probe
+        run: cargo build --locked --manifest-path native-core/Cargo.toml --bin vscode-probe
       - name: Compare Rust VS Code sync, Agents and backups with Python v1.0.0
         run: python -m unittest discover -s tests -p "test_native_vscode_parity.py" -v
       - name: Compile native GGUF metadata probe
-        run: cargo build --manifest-path native-core/Cargo.toml --bin gguf-probe
+        run: cargo build --locked --manifest-path native-core/Cargo.toml --bin gguf-probe
       - name: Compare Rust GGUF and reasoning against Python v1.0.0
         run: python -m unittest discover -s tests -p "test_native_gguf_parity.py" -v
+      - name: Compile native inference request policy probe
+        run: cargo build --locked --manifest-path native-core/Cargo.toml --bin request-probe
+      - name: Compare native request validation, profiles, sampling and thinking policy
+        env:
+          AMIEBL_REQUIRE_NATIVE_TESTS: '1'
+        run: python -m unittest discover -s tests -p "test_native_request_parity.py" -v
       - name: Compile isolated Rust HTTP preview
-        run: cargo build --manifest-path native-core/Cargo.toml --bin amiebl-core-preview
+        run: cargo build --locked --manifest-path native-core/Cargo.toml --bin amiebl-core-preview
       - name: Verify loopback-only preview, admin token and safe data directory
         run: python -m unittest discover -s tests -p "test_native_http_preview.py" -v
       - name: Check frozen reference route and navigation inventory
