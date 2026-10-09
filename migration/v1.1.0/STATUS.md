@@ -88,8 +88,15 @@ Local Windows x64 checks for the new milestone:
   [Release safety/reference builds](https://github.com/ghgf566/AMIEBL/actions/runs/37899878182)
   and [CodeQL](https://github.com/ghgf566/AMIEBL/actions/runs/37899878180) also passed.
   Those release builds package the old Python/C# product, not the native target.
-- The subsequent reload fix adds a 211th full-suite test; its CI result is
-  pending at this follow-up checkpoint.
+- The subsequent reload fix `b962765` adds a 211th full-suite test. All 211
+  passed locally (315.161 seconds). The previously failing frozen Python case
+  passed this run, but its independently reproduced intermittent failure
+  remains recorded. All three workflows also passed at this exact code commit:
+  [migration, including 211 scenarios/RustSec/native GUI](https://github.com/ghgf566/AMIEBL/actions/runs/37901334001),
+  [release safety/reference packaging](https://github.com/ghgf566/AMIEBL/actions/runs/37901339372),
+  [CodeQL](https://github.com/ghgf566/AMIEBL/actions/runs/37901339078).
+  The final status update is documentation only; validated runtime/GUI sources
+  are unchanged from `b9627659b8e919d39345222bb1851553c68f1e1e`.
 
 The first runtime run passed 63/64 reference scenarios, failing same-model
 reload. Subsequent stress/full runs reproduced Windows port rebind failures
@@ -105,7 +112,8 @@ process is stopped. Repeated runtime shutdown also exposed one temporary log
 lock; background resource observation is now joined before exit. One later
 queued-cancel run raised a Windows socket ReadError; isolated repeats passed.
 These observations are retained, not hidden by changing reference assertions
-or retrying inference. The local frozen-reference failure remains unresolved.
+or retrying inference. The local frozen-reference intermittent failure has
+not had its root cause fixed; the latest full local run passed.
 
 The migration workflow now requires the actual runtime executable (missing
 binary is a failure), runs both services' scenarios, whole-crate fmt/Clippy,
