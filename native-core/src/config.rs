@@ -187,7 +187,7 @@ fn validate_profile(value: &mut Value) -> ValidationResult<()> {
         p.insert("budget_mode".into(), json!(mode));
     }
     if !allowed(&p["budget_mode"], &["auto", "custom"]) { return Err("無效的思考預算模式。".into()); }
-    p.entry("thinking_budget".into()).or_insert(json!(1536));
+    p.entry("thinking_budget").or_insert(json!(1536));
     check_number(&p["max_tokens"], "總生成上限", 1., 1048576., true)?;
     check_number(&p["thinking_budget"], "思考預算", 0., 1048576., true)?;
     if p["budget_mode"] == "custom" && (p["thinking_mode"] == "auto" || p["thinking_mode"] == "on") {
@@ -220,9 +220,9 @@ fn validate_model(value: &mut Value, default_profile: &str, ids: &HashSet<String
         let legacy = m.get("reasoning_supported").and_then(Value::as_bool).unwrap_or(false);
         m.insert("reasoning_capability".into(), json!(if legacy { "toggle" } else { "unknown" }));
         m.insert("reasoning_detection".into(), json!("legacy"));
-        m.entry("reasoning_default_effort".into()).or_insert(json!(""));
-        m.entry("reasoning_budget_supported".into()).or_insert(json!(legacy));
-        m.entry("reasoning_toggle_keys".into()).or_insert(json!(if legacy { vec!["enable_thinking"] } else { vec![] }));
+        m.entry("reasoning_default_effort").or_insert(json!(""));
+        m.entry("reasoning_budget_supported").or_insert(json!(legacy));
+        m.entry("reasoning_toggle_keys").or_insert(json!(if legacy { vec!["enable_thinking"] } else { vec![] }));
     }
     let defaults = json!({
         "mmproj":"","vision":false,"context":8192,"gpu_layers":0,"auto_fit":true,
