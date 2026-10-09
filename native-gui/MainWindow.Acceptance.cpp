@@ -138,8 +138,15 @@ IAsyncAction MainWindow::GuiAcceptance() {
     co_await resume_after(std::chrono::milliseconds(80));
     co_await ResumeUI{DispatcherQueue()};
     auto intermediate = serviceLogExpander->Height();
+    bool animationEnabled = Windows::UI::ViewManagement::UISettings().AnimationsEnabled();
+    bool reversing = serviceLogExpander->animating;
     serviceLogExpander->native.IsExpanded(false);
-    check(std::abs(serviceLogExpander->Height() - intermediate) < 1, L"展開反向操作產生高度跳動。");
+    if (animationEnabled && reversing)
+        check(std::abs(serviceLogExpander->from - intermediate) < 1,
+              L"展開反向操作產生高度跳動。");
+    else if (!animationEnabled)
+        check(serviceLogExpander->Height() < 1 && !serviceLogExpander->animating,
+              L"關閉系統動畫時未立即收合。");
     co_await resume_after(std::chrono::milliseconds(350));
     co_await ResumeUI{DispatcherQueue()};
     check(serviceLogExpander->Height() < 1 && !serviceLogExpander->animating,
@@ -178,6 +185,8 @@ IAsyncAction MainWindow::GuiAcceptance() {
     result.SetNamedValue(L"overview_controls", JsonValue::CreateBooleanValue(true));
     result.SetNamedValue(L"task_cancel_confirmed", JsonValue::CreateBooleanValue(true));
     result.SetNamedValue(L"scroll_preserved", JsonValue::CreateBooleanValue(true));
+    result.SetNamedValue(L"animations_enabled", JsonValue::CreateBooleanValue(animationEnabled));
+    result.SetNamedValue(L"expander_reversal_checked", JsonValue::CreateBooleanValue(reversing && animationEnabled));
     result.SetNamedValue(L"protocol", JsonValue::CreateNumberValue(1));
     result.SetNamedValue(L"ui_parity_verified", JsonValue::CreateBooleanValue(false));
     TestResult(result);

@@ -40,6 +40,26 @@ the full run. This is retained as an unresolved reference port-rebind flake,
 not hidden or interpreted as a full-green run. Windows CI will independently
 reproduce the expanded suite and RustSec check on the pushed commit.
 
+Final local rerun on code commit `ed12cd70e38cc8a328b451e2c3217d3fd4576067`
+passes **215 tests** (335.064 seconds), including all three GUI owned/attached/
+incompatible-service cases. The earlier reference port-rebind failure remains
+recorded above. GitHub run 37909747305 builds and starts the native GUI but
+fails the GUI/Core integration step: both operation cases reject an immediate
+collapse as a height discontinuity. The test originally applied animated
+reversal continuity to reduced-motion systems. The acceptance harness now
+checks the captured animation origin only when reversing an active animation;
+when Windows animations are disabled it requires immediate completed collapse.
+It records animations_enabled and expander_reversal_checked explicitly.
+The new CI rerun must confirm this diagnosis; no product animation policy or
+parity requirement is weakened.
+Its RustSec check passes. CodeQL 37909754013 and frozen release-safety
+37909754040 pass; neither establishes native GUI parity or packaging.
+
+The ten recovered reference captures, original animation measurements and
+SHA-256 manifest are now preserved under `baselines/v1.0.0/`. Capture build
+metadata is a3440cb; desktop source trees were checked identical to v1.0.0.
+All-DPI, interaction video and remaining states are still absent.
+
 **Not complete:** models/profiles/system page builders, all editors and dirty
 state, tray/background close, single instance, complete reconnection/timeouts,
 all DPI/keyboard/manual visual acceptance, real CPU/CUDA inference, independent

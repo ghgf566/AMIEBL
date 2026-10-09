@@ -1,0 +1,23 @@
+{
+  "reference_commit": "eab5dc1451bf38d1c008558ba8d49c85954c04bb",
+  "capture_build_commit": "a3440cb089d26e49b9a4dfa6c8ca8908d7708e03",
+  "desktop_source_diff_verified_empty": true,
+  "capture_date": "2026-10-09",
+  "root_pixels": [
+    1224,
+    821
+  ],
+  "screenshot_sha256": {
+    "任務與紀錄.png": "409155d6b28221a53517074eede2c142a88483be059a3c934033bc2629bd8094",
+    "使用模式.png": "fa9849f571e1ebb17b6ec3e9985fd8c911d4da935afd66fba06a89f84523fcec",
+    "導覽列精簡.png": "7f20ecc22f44d6e10bb7ee7ba09cb559ce739c23b7cc2f854f99ebb37643434b",
+    "思考預算.png": "716345f605f40e3bd4ebd08f44498e5695358fd9b0204a725c25383d6631e759",
+    "服務紀錄展開.png": "edb8d4b66614e2a810bc7a63e8a24e94fd18720ed2d7ffba7f2752defc608d5a",
+    "模型位置展開.png": "170e8e83fb7de68430ae8bf052a230b1fe45f5ddba5bc8dd8561d1071eac752c",
+    "模型庫.png": "28bd2158f4d87af1c8fa7d2b55525eff32ba6ffed94eb9d6e02772287654ad5e",
+    "模型庫效能.png": "5e01c5933832b492a351f37c5644b7f36370e1c015c0e9ca7b514accd26f5ed6",
+    "系統.png": "d5decf0c4422a2dfe83a9de2eb343d08255f4fa127b896862564609a5f7c39bd",
+    "總覽.png": "df6b7d78498eee37b1abfd4b4aba558656a797c474612bc9a5a19d0c498a838a"
+  },
+  "native_parity_verified": false
+}
