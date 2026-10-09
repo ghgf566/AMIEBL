@@ -98,6 +98,7 @@ impl Ticket {
     }
 }
 struct Inner {
+    managed_engine_dir: Option<PathBuf>,
     store: ConfigStore,
     state: &'static str,
     model: Option<Value>,
@@ -118,6 +119,7 @@ struct Inner {
     last_used: Instant,
 }
 pub struct Manager {
+    engines: Arc<crate::engines::EngineManager>,
     background: Mutex<Vec<tokio::task::JoinHandle<()>>>,
     inner: Mutex<Inner>,
     lifecycle: Mutex<()>,
@@ -288,9 +290,18 @@ impl Manager {
             .connect_timeout(Duration::from_secs(5))
             .build()
             .map_err(|e| e.to_string())?;
+        let engines = crate::engines::EngineManager::open(
+            std::env::current_exe()
+                .map_err(|e| e.to_string())?
+                .parent()
+                .ok_or("Missing application directory")?,
+        )?;
+        let managed_engine_dir = engines.active_directory().await?;
         let manager = Arc::new(Self {
+            engines,
             background: Mutex::new(Vec::new()),
             inner: Mutex::new(Inner {
+                managed_engine_dir,
                 store,
                 state: "unloaded",
                 model: None,
@@ -342,6 +353,24 @@ impl Manager {
             .await
             .extend([worker_task, monitor_task, watcher_task]);
         manager.log("管理器已啟動，等待本地請求。").await;
+        let updater = manager.clone();
+        let update_task = tokio::spawn(async move {
+            let _ = updater.engines.detect().await;
+            let mut elapsed = 0u32;
+            loop {
+                if elapsed.is_multiple_of(360) {
+                    if let Err(e) = updater.engines.automatic_check().await {
+                        updater.log(&format!("引擎更新檢查：{e}")).await;
+                    }
+                }
+                if let Some(id) = updater.engines.auto_candidate().await {
+                    let _ = updater.activate_engine(&id).await;
+                }
+                tokio::select! { _ = updater.stopping.cancelled() => break, _ = sleep(Duration::from_secs(60)) => {} }
+                elapsed = elapsed.wrapping_add(1);
+            }
+        });
+        manager.background.lock().await.push(update_task);
         let config = manager.inner.lock().await.store.config().clone();
         if config["preload"] == true && !config["models"].as_array().unwrap().is_empty() {
             manager
@@ -358,9 +387,28 @@ impl Manager {
             i.lines.pop_front();
         }
     }
+    async fn activate_engine(&self, id: &str) -> Result<(), String> {
+        let _lifecycle = self.lifecycle.lock().await;
+        let directory = self.engines.directory(id).await?;
+        let mut inner = self.inner.lock().await;
+        if !inner.tickets.is_empty()
+            || inner.process.is_some()
+            || matches!(inner.state, "loading" | "unloading")
+        {
+            return Err("引擎仍在使用中；請先卸載模型再切換版本。".into());
+        }
+        // Same guarded state lock as admission prevents a new request during switching.
+        self.engines.activate(id).await?;
+        inner.managed_engine_dir = Some(directory);
+        Ok(())
+    }
     fn changed(&self, i: &Inner, model: &Value) -> bool {
         i.loaded.as_ref().is_some_and(|loaded| {
-            loaded["engine_dir"] != i.store.config()["engine_dir"]
+            loaded["engine_dir"]
+                != i.managed_engine_dir
+                    .as_ref()
+                    .map(|p| json!(p))
+                    .unwrap_or_else(|| i.store.config()["engine_dir"].clone())
                 || loaded["engine_port"]
                     != json!(self
                         .engine_port
@@ -576,6 +624,12 @@ impl Manager {
         model: &mut Value,
         replacing_owned_port: bool,
     ) -> Result<(), String> {
+        let engine_status = self.engines.status().await;
+        if engine_status["policy"]["mode"] == "managed" && engine_status["active"].is_null() {
+            return Err(
+                "尚未啟用管理的推理引擎，請在系統頁下載並啟用版本，或改回外部引擎。".into(),
+            );
+        }
         check_gguf(
             &model["path"],
             "模型檔案不存在，請在模型庫重新選擇位置。",
@@ -608,7 +662,14 @@ impl Manager {
                 );
             }
         }
-        let config = self.inner.lock().await.store.config().clone();
+        let config = {
+            let i = self.inner.lock().await;
+            let mut config = i.store.config().clone();
+            if let Some(path) = &i.managed_engine_dir {
+                config["engine_dir"] = json!(path);
+            }
+            config
+        };
         let port = self
             .engine_port
             .unwrap_or(config["engine_port"].as_u64().unwrap() as u16);
@@ -1388,6 +1449,7 @@ impl Manager {
             sleep(Duration::from_millis(25)).await;
         }
         self.stopping.cancel();
+        self.engines.cancel().await;
         for mut task in self.background.lock().await.drain(..) {
             if timeout(Duration::from_secs(3), &mut task).await.is_err() {
                 task.abort();
@@ -1735,8 +1797,14 @@ async fn models(State(m): State<Arc<Manager>>) -> Json<Value> {
 }
 async fn connection(State(m): State<Arc<Manager>>) -> ApiResult {
     let i = m.inner.lock().await;
-    let c = i.store.config();
-    let exists = Path::new(&engine_command(c)?[0]).is_file();
+    let mut effective = i.store.config().clone();
+    if let Some(directory) = &i.managed_engine_dir {
+        effective["engine_dir"] = json!(directory);
+    }
+    let c = &effective;
+    let status = m.engines.status().await;
+    let selected = status["policy"]["mode"] != "managed" || status["active"].is_string();
+    let exists = selected && Path::new(&engine_command(c)?[0]).is_file();
     let occupied = !free_port(
         m.engine_port
             .unwrap_or(c["engine_port"].as_u64().unwrap() as u16),
@@ -1963,9 +2031,192 @@ pub fn router(manager: Arc<Manager>) -> Router {
         .route("/manager/vscode/apply", post(vscode_apply))
         .route("/manager/scan", post(scan))
         .route("/manager/model-capabilities", post(capabilities))
+        .route("/manager/engines", get(engine_status))
+        .route("/manager/engines/hardware", post(engine_hardware))
+        .route("/manager/engines/policy", post(engine_policy))
+        .route("/manager/engines/check", post(engine_check))
+        .route("/manager/engines/install", post(engine_install))
+        .route("/manager/engines/cancel", post(engine_cancel))
+        .route("/manager/engines/activate", post(engine_activate))
+        .route("/manager/engines/rollback", post(engine_rollback))
+        .route("/manager/engines/remove", post(engine_remove))
+        .route("/manager/engines/stop", post(engine_stop))
+        .route("/manager/engines/runtime", get(engine_runtime))
         .route("/v1/models", get(models))
         .route("/v1/chat/completions", post(completion))
         .layer(DefaultBodyLimit::max(MAX_BODY + 1))
         .layer(middleware::from_fn_with_state(manager.clone(), gate))
         .with_state(manager)
+}
+
+async fn engine_status(State(m): State<Arc<Manager>>) -> ApiResult {
+    Ok(Json(m.engines.status().await))
+}
+async fn engine_hardware(State(m): State<Arc<Manager>>) -> ApiResult {
+    Ok(Json(m.engines.detect().await?))
+}
+async fn engine_policy(
+    State(m): State<Arc<Manager>>,
+    Json(policy): Json<crate::engines::Policy>,
+) -> ApiResult {
+    let _lifecycle = m.lifecycle.lock().await;
+    let mut inner = m.inner.lock().await;
+    let current = m.engines.status().await;
+    if policy.mode != current["policy"]["mode"]
+        && (!inner.tickets.is_empty()
+            || inner.process.is_some()
+            || matches!(inner.state, "loading" | "unloading"))
+    {
+        return Err(ApiError::detail(409, "請先卸載模型，再切換引擎來源。"));
+    }
+    let result = m.engines.policy(policy).await?;
+    inner.managed_engine_dir = m.engines.active_directory().await?;
+    drop(inner);
+    drop(_lifecycle);
+    let updater = m.clone();
+    let task = tokio::spawn(async move {
+        if let Err(e) = updater.engines.automatic_check().await {
+            updater.log(&format!("引擎更新檢查：{e}")).await;
+        }
+    });
+    m.background.lock().await.push(task);
+    Ok(Json(result))
+}
+async fn engine_check(State(m): State<Arc<Manager>>) -> ApiResult {
+    Ok(Json(m.engines.check().await?))
+}
+async fn engine_install(State(m): State<Arc<Manager>>, Json(body): Json<Value>) -> ApiResult {
+    m.engines.install().await?;
+    if body["activate_when_idle"] == true {
+        m.engines.request_activation().await;
+    }
+    Ok(Json(m.engines.status().await))
+}
+async fn engine_cancel(State(m): State<Arc<Manager>>) -> ApiResult {
+    Ok(Json(m.engines.cancel().await))
+}
+async fn engine_activate(State(m): State<Arc<Manager>>, Json(body): Json<Value>) -> ApiResult {
+    m.activate_engine(
+        body["id"]
+            .as_str()
+            .ok_or_else(|| "Missing package id".to_owned())?,
+    )
+    .await?;
+    Ok(Json(m.engines.status().await))
+}
+async fn engine_rollback(State(m): State<Arc<Manager>>) -> ApiResult {
+    let id = m.engines.previous().await?;
+    m.activate_engine(&id).await?;
+    Ok(Json(m.engines.status().await))
+}
+async fn engine_remove(State(m): State<Arc<Manager>>, Json(body): Json<Value>) -> ApiResult {
+    let id = body["id"]
+        .as_str()
+        .ok_or_else(|| "Missing package id".to_owned())?;
+    let _lifecycle = m.lifecycle.lock().await;
+    let mut inner = m.inner.lock().await;
+    let current = m.engines.status().await;
+    if current["active"] == id
+        && (!inner.tickets.is_empty()
+            || inner.process.is_some()
+            || matches!(inner.state, "loading" | "unloading"))
+    {
+        return Err(ApiError::detail(
+            409,
+            "引擎仍在運作；請先停止推理引擎，再移除此版本。",
+        ));
+    }
+    let result = m.engines.remove(id).await?;
+    inner.managed_engine_dir = m.engines.active_directory().await?;
+    Ok(Json(result))
+}
+
+async fn engine_stop(State(m): State<Arc<Manager>>) -> ApiResult {
+    let tickets = {
+        let mut inner = m.inner.lock().await;
+        inner.accepting = false;
+        if let Some(cancel) = &inner.load_cancel {
+            cancel.cancel();
+        }
+        inner.tickets.values().cloned().collect::<Vec<_>>()
+    };
+    for ticket in tickets {
+        m.cancel(ticket).await;
+    }
+    m.unload().await;
+    m.log("推理引擎已停止，已暫停接受新任務；重新使用前請恢復接受任務。")
+        .await;
+    Ok(Json(json!({"ok":true,"accepting":false})))
+}
+
+async fn engine_runtime(State(m): State<Arc<Manager>>) -> ApiResult {
+    let (pid, exited, port, executable, version) = {
+        let mut inner = m.inner.lock().await;
+        let (pid, exited) = match inner.process.as_mut() {
+            Some(child) => match child.try_wait() {
+                Ok(Some(exit)) => (None, Some(exit.to_string())),
+                Ok(None) => (child.id(), None),
+                Err(error) => (child.id(), Some(error.to_string())),
+            },
+            None => (None, None),
+        };
+        let mut config = inner.store.config().clone();
+        if let Some(path) = &inner.managed_engine_dir {
+            config["engine_dir"] = json!(path);
+        }
+        (
+            pid,
+            exited,
+            m.engine_port
+                .unwrap_or(config["engine_port"].as_u64().unwrap() as u16),
+            engine_command(&config)?[0].clone(),
+            inner.engine_version.clone(),
+        )
+    };
+    let selected = m.engines.status().await;
+    let package = selected["packages"]
+        .as_array()
+        .and_then(|packages| packages.iter().find(|p| p["id"] == selected["active"]));
+    let installed = (selected["policy"]["mode"] != "managed" || package.is_some())
+        && Path::new(&executable).is_file();
+    let occupied = !free_port(port);
+    let health = if pid.is_some() || occupied {
+        match m
+            .http
+            .get(format!("http://127.0.0.1:{port}/health"))
+            .timeout(Duration::from_millis(750))
+            .send()
+            .await
+        {
+            Ok(response) => Some(response.status().as_u16()),
+            Err(_) => None,
+        }
+    } else {
+        None
+    };
+    let state = if exited.is_some() {
+        "exited"
+    } else if pid.is_none() && occupied {
+        if matches!(health, Some(200 | 503)) {
+            "external"
+        } else {
+            "port_in_use"
+        }
+    } else if pid.is_some() {
+        match health {
+            Some(200) => "running",
+            Some(503) => "starting",
+            _ => "unresponsive",
+        }
+    } else if installed {
+        "stopped"
+    } else {
+        "not_installed"
+    };
+    Ok(Json(
+        json!({"state":state,"pid":pid,"owned":pid.is_some(),"health_http_status":health,
+        "exit_detail":exited,"url":format!("http://127.0.0.1:{port}"),"port":port,
+        "engine":"llama.cpp","version":package.map(|p|p["version"].clone()).unwrap_or(version),
+        "backend":package.map(|p|p["backend"].clone()),"build_tag":package.map(|p|p["build_tag"].clone())}),
+    ))
 }

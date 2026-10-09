@@ -19,6 +19,15 @@ UIElement MainWindow::BuildOverview() {
                                  Action(L"載入預設模型", [this] { return LoadDefault(); }),
                                  Action(L"卸載模型", [this] { return Unload(); })}));
     panel.Children().Append(Card(L"模型與服務", state));
+    auto engine = Panel();
+    overviewEngine = Text(L"正在讀取 server 狀態…");
+    engine.Children().Append(overviewEngine);
+    engine.Children().Append(Row({Action(L"停止推理引擎",[this]() -> IAsyncAction {
+        if (!co_await Confirm(L"停止 server 並取消任務？模型會卸載，接收新任務會暫停；AMIEBL 繼續運作。")) co_return;
+        co_await core->Request(L"POST",L"/manager/engines/stop",JsonObject());
+        co_await Poll();
+    }), Action(L"引擎管理",[this]() -> IAsyncAction { ShowPage(L"系統"); co_return; })}));
+    panel.Children().Append(Card(L"推理引擎 · server",engine));
     Grid metrics;
     metrics.ColumnSpacing(16);
     for (int i = 0; i < 2; i++) {
@@ -53,6 +62,19 @@ void MainWindow::UpdateOverview() {
     if (!overviewModel)
         return;
     overviewModel.Text(L"模型：" + str(status, L"model_name", L"尚未載入"));
+    auto serverState=str(engineRuntime,L"state");
+    hstring serverLabel=L"正在讀取";
+    if(serverState==L"running") serverLabel=L"運行中 · 健康檢查正常";
+    else if(serverState==L"starting") serverLabel=L"程序運行中 · server 尚未就緒";
+    else if(serverState==L"stopped") serverLabel=L"已停止";
+    else if(serverState==L"not_installed") serverLabel=L"未安裝或尚未選用";
+    else if(serverState==L"unresponsive") serverLabel=L"程序運行中 · 服務無回應或回應異常";
+    else if(serverState==L"exited") serverLabel=L"程序已退出 · "+str(engineRuntime,L"exit_detail");
+    else if(serverState==L"external") serverLabel=L"外部服務 · AMIEBL 不管理此程序";
+    else if(serverState==L"port_in_use") serverLabel=L"連接埠由其他程序占用";
+    overviewEngine.Text(L"llama.cpp · "+serverLabel+L"\n版本："+str(engineRuntime,L"version",L"未取得")+
+        L" · "+str(engineRuntime,L"build_tag")+L" · 套件："+str(engineRuntime,L"backend",L"外部指定")+
+        L"\nPID："+str(engineRuntime,L"pid",L"—")+L" · "+str(engineRuntime,L"url"));
     overviewState.Text(L"狀態：" + Phase(str(status, L"state", L"unloaded")) + L" · " +
                        ApplicationState());
     overviewQueue.Text(L"執行中：" + str(status, L"active_count", L"0") + L"\n等待中：" +

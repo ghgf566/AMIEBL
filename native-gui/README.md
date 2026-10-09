@@ -1,5 +1,11 @@
 # Native GUI migration build target — not a replacement GUI
 
+The system page now includes development engine management: Stable/Preview,
+automatic/manual backend selection, installation progress/cancellation,
+version activation/rollback and update policy. Managed engines live beside
+the packaged executables in `推理引擎/`; external `engine_dir` remains available.
+See [engine management](../native-core/ENGINES.md) for verification and limits.
+
 This is a real C++20/C++/WinRT WinUI 3 executable, with app-local Windows App SDK
 and the frozen v1.0.0 MainWindow XAML shell (only its class namespace changes).
 The overview and tasks/history pages now construct real controls and communicate

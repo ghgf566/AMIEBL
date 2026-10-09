@@ -49,8 +49,9 @@ try {
 # AMIEBL native development build
 
 Run Start-Development.cmd. Data is isolated in development-data next to this
-build. Specify your existing llama.cpp engine_dir and GGUF files in the GUI.
-No engine is downloaded or installed. Do not point this development build at
+build. Use System > Engine management to select a channel and install a managed
+engine, or specify your existing external engine_dir. Select your own GGUF files.
+The package does not bundle an engine. Do not point this development build at
 the supported product's live data without a separate backup.
 
 This contains a C++/WinRT GUI and Rust service, with app-local Windows App SDK.
@@ -62,6 +63,19 @@ are still pending; see STATUS.md. Startup registration uses an isolated
 AMIEBL.Native.Development Run value and does not replace v1.0.0 registration.
 '@ | Set-Content -LiteralPath (Join-Path $destination 'README.md') -Encoding utf8
     git rev-parse HEAD | Set-Content -LiteralPath (Join-Path $destination 'SOURCE-COMMIT.txt') -Encoding ascii
+    $sourceFiles = @(git -c core.quotepath=false ls-files --cached --others --exclude-standard)
+    if ($LASTEXITCODE -ne 0) { throw 'Could not inventory source files.' }
+    $sourceFiles | ForEach-Object {
+        $sourcePath = Join-Path $repo $_
+        if (Test-Path -LiteralPath $sourcePath -PathType Leaf) {
+            "$((Get-FileHash -LiteralPath $sourcePath -Algorithm SHA256).Hash.ToLowerInvariant())  $_"
+        }
+    } | Set-Content -LiteralPath (Join-Path $destination 'SOURCE-FILES.sha256') -Encoding utf8
+    @{
+        base_commit = (git rev-parse HEAD)
+        dirty = [bool]@(git status --porcelain).Count
+        source_inventory = 'SOURCE-FILES.sha256'
+    } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $destination 'SOURCE-STATE.json') -Encoding utf8
     Get-ChildItem -LiteralPath $destination -File -Recurse | Where-Object Name -ne 'SHA256SUMS' |
         ForEach-Object { $hash = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant(); "$hash  $([IO.Path]::GetRelativePath($destination,$_.FullName))" } |
         Set-Content -LiteralPath (Join-Path $destination 'SHA256SUMS') -Encoding utf8

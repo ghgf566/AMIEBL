@@ -210,6 +210,7 @@ UIElement MainWindow::BuildForm(std::shared_ptr<EditorDraft> draft) {
     editorExpanders.clear();
     auto panel = Panel();
     if (draft->collection == L"system") {
+        panel.Children().Append(BuildEngines());
         panel.Children().Append(Action(L"檢查連線", [this] { return CheckConnection(); }));
         panel.Children().Append(Text(L"資料位置：" + hstring(core->dataDir.wstring()), 12));
     }

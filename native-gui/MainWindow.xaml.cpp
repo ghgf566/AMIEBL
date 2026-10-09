@@ -121,10 +121,13 @@ fire_and_forget MainWindow::StartAsync() {
         timer.Start();
         co_await Poll();
         if (CoreClient::Option(L"--gui-test") == L"1" ||
+            CoreClient::Option(L"--engine-test") == L"1" ||
             CoreClient::Option(L"--editor-test") == L"1" ||
             CoreClient::Option(L"--lifecycle-test") == L"1") {
             timer.Stop();
-            if (CoreClient::Option(L"--lifecycle-test") == L"1")
+            if (CoreClient::Option(L"--engine-test") == L"1")
+                co_await EnginesAcceptance();
+            else if (CoreClient::Option(L"--lifecycle-test") == L"1")
                 co_await LifecycleAcceptance();
             else if (CoreClient::Option(L"--editor-test") == L"1")
                 co_await EditorAcceptance();
@@ -139,7 +142,7 @@ fire_and_forget MainWindow::StartAsync() {
         Error(to_hstring(e.what()));
         Reveal();
     }
-    if (CoreClient::Option(L"--gui-test") == L"1" || CoreClient::Option(L"--editor-test") == L"1" ||
+    if (CoreClient::Option(L"--gui-test") == L"1" || CoreClient::Option(L"--engine-test") == L"1" || CoreClient::Option(L"--editor-test") == L"1" ||
         CoreClient::Option(L"--lifecycle-test") == L"1") {
         if (Notice().Severity() == InfoBarSeverity::Error) {
             JsonObject result;
@@ -396,8 +399,12 @@ IAsyncAction MainWindow::Poll() {
             }
             UpdateTasks();
         }
-        if (page == L"總覽")
+        if (page == L"總覽") {
+            engineRuntime = co_await core->Request(L"GET",L"/manager/engines/runtime");
             UpdateOverview();
+        }
+        if (page == L"系統" && engineInfo)
+            co_await RefreshEngines();
         UpdateFooter();
         if (lifecycle)
             lifecycle->Update(L"AMIEBL · " + str(status, L"state"));

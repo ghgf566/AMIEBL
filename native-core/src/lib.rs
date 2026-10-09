@@ -15,3 +15,5 @@ pub mod gguf;
 pub mod request;
 
 pub mod runtime;
+
+pub mod engines;

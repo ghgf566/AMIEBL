@@ -25,7 +25,8 @@ struct MainWindow : MainWindowT<MainWindow> {
     Microsoft::UI::Xaml::DispatcherTimer timer;
     Microsoft::UI::Xaml::Controls::TextBlock overviewModel{nullptr}, overviewState{nullptr},
         overviewQueue{nullptr}, overviewMemory{nullptr}, overviewConnection{nullptr},
-        overviewError{nullptr};
+        overviewError{nullptr}, overviewEngine{nullptr};
+    Windows::Data::Json::JsonObject engineRuntime;
     Microsoft::UI::Xaml::Controls::Border overviewErrorCard{nullptr};
     Microsoft::UI::Xaml::Controls::ScrollViewer overviewScroll{nullptr};
     Microsoft::UI::Xaml::Controls::ListView taskList{nullptr};
@@ -80,6 +81,22 @@ struct MainWindow : MainWindowT<MainWindow> {
     SaveConfig(std::function<void(Windows::Data::Json::JsonObject const &)> edit);
     Microsoft::UI::Xaml::UIElement BuildEntities(hstring collection);
     Microsoft::UI::Xaml::UIElement BuildSystem();
+    Microsoft::UI::Xaml::UIElement BuildEngines();
+    Microsoft::UI::Xaml::Controls::TextBlock engineInfo{nullptr};
+    Microsoft::UI::Xaml::Controls::ComboBox engineChannel{nullptr}, engineBackend{nullptr}, engineUpdate{nullptr}, engineMode{nullptr}, engineVersions{nullptr};
+    Microsoft::UI::Xaml::Controls::CheckBox enginePinned{nullptr};
+    bool enginePolicyLoaded = false;
+    hstring engineCandidateId;
+    bool engineCandidateInstalled = false;
+    Microsoft::UI::Xaml::DispatcherTimer engineSaveTimer{nullptr};
+    Microsoft::UI::Xaml::Controls::TextBlock engineHardware{nullptr}, engineCompatibility{nullptr}, engineDownloadText{nullptr};
+    Microsoft::UI::Xaml::Controls::ProgressBar engineProgress{nullptr};
+    Microsoft::UI::Xaml::Controls::Button engineDownload{nullptr}, engineCancel{nullptr}, engineCheck{nullptr};
+    Windows::Foundation::IAsyncAction RefreshEngines();
+    Windows::Foundation::IAsyncAction EngineAction(hstring path);
+    Windows::Foundation::IAsyncAction SaveEnginePolicy();
+    Windows::Foundation::IAsyncAction SelectEngine(bool remove);
+    Windows::Foundation::IAsyncAction EnginesAcceptance();
     Microsoft::UI::Xaml::UIElement BuildForm(std::shared_ptr<amiebl::EditorDraft> draft);
     Microsoft::UI::Xaml::UIElement BuildModelLocations();
     void PopulateEntities(hstring collection);

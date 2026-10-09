@@ -1,3 +1,12 @@
+## Latest engine-management continuation (2026-10-10)
+
+The user subsequently brought engine management into the 1.1.0 scope. The older
+priority decision below is historical. Managed Windows llama.cpp packages,
+Stable/Preview channels, hardware recommendations, safe installation, updates,
+rollback/removal, server stop and independent overview status are implemented.
+See ../NEXT-STEPS.md and ../../native-core/ENGINES.md for current evidence,
+limitations and remaining release gates. This remains a development branch;
+no release, main merge or completion of clean-machine acceptance is implied.
 # v1.1.0 native migration — current continuation status
 
 **IN PROGRESS. Not release ready. PR #8 is Draft. No acceptance gate is waived.**
