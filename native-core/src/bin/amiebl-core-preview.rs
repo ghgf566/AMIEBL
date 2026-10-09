@@ -47,7 +47,7 @@ async fn safety_gate(State(state):State<Arc<Preview>>,request:Request,next:Next)
 async fn health()->Json<Value>{
     Json(json!({"ok":true,"app":"local-model-manager","version":"1.1.0-preview"}))
 }
-async fn config(State(state):State<Arc<Preview>>)->Json<Value>{
+async fn get_config(State(state):State<Arc<Preview>>)->Json<Value>{
     Json(state.config.config().clone())
 }
 async fn models(State(state):State<Arc<Preview>>)->Json<Value>{
@@ -96,8 +96,8 @@ async fn main()->Result<(),Box<dyn std::error::Error>>{
     let state=Arc::new(Preview{config,port});
     let app=Router::new()
         .route("/health",get(health))
-        .route("/manager/config",get(config))
-        .route("/manager/export",get(config))
+        .route("/manager/config",get(get_config))
+        .route("/manager/export",get(get_config))
         .route("/v1/models",get(models))
         .layer(middleware::from_fn_with_state(state.clone(),safety_gate))
         .with_state(state);
