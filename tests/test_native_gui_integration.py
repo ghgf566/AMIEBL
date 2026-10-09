@@ -92,7 +92,8 @@ class NativeGuiIntegration(native.NativeRuntimeIntegration):
         self.assertTrue(result["ok"], result)
         for key in ("editor_fields", "dynamic_fields", "dirty_navigation", "conflict_preserved",
                     "unknown_fields_preserved", "optional_sampling", "profile_array_save",
-                    "system_save", "profile_add_duplicate"):
+                    "system_save", "profile_add_duplicate", "profile_delete_confirm",
+                    "unicode_editor_search"):
             self.assertTrue(result[key], result)
         self.assertFalse(result["ui_parity_verified"])
         self.assertEqual(self.get("/manager/config"), before)

@@ -16,8 +16,18 @@ struct FieldSpec {
 };
 inline winrt::hstring trim(winrt::hstring const &s) {
     std::wstring t(s);
-    auto a = t.find_first_not_of(L" \t\r\n"), b = t.find_last_not_of(L" \t\r\n");
-    return a == std::wstring::npos ? winrt::hstring() : winrt::hstring(t.substr(a, b - a + 1));
+    // Match .NET Char.IsWhiteSpace rather than the active C locale.
+    auto whitespace = [](wchar_t c) {
+        return (c >= 0x09 && c <= 0x0d) || c == 0x20 || c == 0x85 || c == 0xa0 || c == 0x1680 ||
+               (c >= 0x2000 && c <= 0x200a) || c == 0x2028 || c == 0x2029 || c == 0x202f ||
+               c == 0x205f || c == 0x3000;
+    };
+    size_t a = 0, b = t.size();
+    while (a < b && whitespace(t[a]))
+        ++a;
+    while (b > a && whitespace(t[b - 1]))
+        --b;
+    return winrt::hstring(t.substr(a, b - a));
 }
 inline JsonArray split(winrt::hstring const &text, wchar_t separator) {
     JsonArray result;

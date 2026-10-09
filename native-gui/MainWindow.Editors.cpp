@@ -8,10 +8,16 @@ using namespace Microsoft::UI::Xaml::Controls;
 using namespace Windows::Foundation;
 using namespace Windows::Data::Json;
 using namespace amiebl;
-static std::wstring Lower(hstring text) {
-    std::wstring s(text);
-    std::transform(s.begin(), s.end(), s.begin(), towlower);
-    return s;
+static bool ContainsOrdinalIgnoreCase(hstring text, hstring query) {
+    if (query.empty())
+        return true;
+    if (query.size() > text.size())
+        return false;
+    for (uint32_t i = 0; i <= text.size() - query.size(); ++i)
+        if (CompareStringOrdinal(text.c_str() + i, static_cast<int>(query.size()), query.c_str(),
+                                 static_cast<int>(query.size()), TRUE) == CSTR_EQUAL)
+            return true;
+    return false;
 }
 void MainWindow::PopulateEntities(hstring collection) {
     if (!entityList)
@@ -23,7 +29,7 @@ void MainWindow::PopulateEntities(hstring collection) {
         auto id = str(data, L"id"), name = str(data, L"name");
         auto search =
             name + L" " + id + (collection == L"models" ? L" " + str(data, L"path") : L"");
-        if (!entitySearch.empty() && Lower(search).find(Lower(entitySearch)) == std::wstring::npos)
+        if (!ContainsOrdinalIgnoreCase(search, entitySearch))
             continue;
         if (collection == L"models" && id == str(config, L"default_model_id"))
             name = name + L" · 預設";

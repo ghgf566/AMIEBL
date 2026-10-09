@@ -50,6 +50,7 @@ struct MainWindow : MainWindowT<MainWindow> {
     using ActionTask = std::function<Windows::Foundation::IAsyncAction()>;
     std::vector<winrt::weak_ref<Microsoft::UI::Xaml::Input::ICommand>> commands;
     uint64_t configRevision = 0;
+    bool savedStatusUnavailable = false;
     Microsoft::UI::Xaml::Controls::TextBlock capabilityText{nullptr};
     std::weak_ptr<amiebl::SmoothExpander> revealingEditor;
     void RefreshCommands();

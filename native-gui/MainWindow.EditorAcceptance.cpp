@@ -123,13 +123,14 @@ IAsyncAction MainWindow::EditorAcceptance() {
     check(page == L"使用模式", L"捨棄沒有切換頁面。");
     check(inputs.size() == 10, L"模式欄位規格不完整。");
     auto profileId = editor->id;
+    setText(L"name", L"\u3000ÉTUDE 測試模式\u00a0");
     choose(L"thinking_mode", L"on");
     choose(L"budget_mode", L"custom");
     check(fieldBlocks.at(L"thinking_budget").Visibility() == Visibility::Visible,
           L"自訂預算没有顯示。");
     setText(L"thinking_budget", L"64");
     setText(L"max_tokens", L"4096");
-    setText(L"agent_tools", L"web, read, , edit");
+    setText(L"agent_tools", L"\u3000web\u00a0, read, \u3000, edit");
     setText(L"agent_instructions", L"保留使用者指令\n第二行");
     Navigation().SelectedItem(Navigation().MenuItems().GetAt(4));
     co_await resume_after(std::chrono::milliseconds(250));
@@ -138,6 +139,9 @@ IAsyncAction MainWindow::EditorAcceptance() {
     check(page == L"系統", L"保存草稿沒有切頁。");
     saved = co_await core->Request(L"GET", L"/manager/config");
     auto profile = entity(saved, L"profiles", profileId);
+    check(str(profile, L"name") == L"ÉTUDE 測試模式" &&
+              array(profile, L"agent_tools").GetAt(0).GetString() == L"web",
+          L"Unicode 空白處理與原版不同。");
     check(number(profile, L"thinking_budget") == 64 && array(profile, L"agent_tools").Size() == 3,
           L"模式設定或工具陣列沒有保存。");
     check(inputs.size() == 12, L"系統欄位規格不完整。");
@@ -151,6 +155,12 @@ IAsyncAction MainWindow::EditorAcceptance() {
           L"系統設定沒有保存。");
     co_await Capture(L"系統");
     ShowPage(L"使用模式");
+    entitySearch = L"étude";
+    PopulateEntities(L"profiles");
+    check(entityList.Items().Size() == 1, L"搜尋沒有使用序數大小寫比對。");
+    entitySearch = L"";
+    PopulateEntities(L"profiles");
+    RestoreEntitySelection(L"profiles");
     co_await Capture(L"使用模式");
     co_await InvokeButton(L"複製");
     check(array(config, L"profiles").Size() == array(saved, L"profiles").Size() + 1,
@@ -163,15 +173,31 @@ IAsyncAction MainWindow::EditorAcceptance() {
     co_await InvokeButton(L"新增");
     check(str(entity(config, L"profiles", selectedProfile), L"name") == L"新的使用模式",
           L"新增模式未保存。");
+    auto addedId = selectedProfile;
+    auto deletion = InvokeButton(L"刪除此模式");
+    co_await resume_after(std::chrono::milliseconds(250));
+    co_await ResumeUI{DispatcherQueue()};
+    co_await InvokeButton(L"取消");
+    co_await deletion;
+    check(entity(config, L"profiles", addedId).Size() != 0, L"取消刪除仍移除了模式。");
+    deletion = InvokeButton(L"刪除此模式");
+    co_await resume_after(std::chrono::milliseconds(250));
+    co_await ResumeUI{DispatcherQueue()};
+    co_await InvokeButton(L"確認");
+    co_await deletion;
+    check(entity(config, L"profiles", addedId).Size() == 0 &&
+              array(config, L"profiles").Size() == array(saved, L"profiles").Size() + 1,
+          L"確認刪除模式沒有保存。");
     // Restore fixture data using the same API; no production directory is used.
     config = co_await core->Request(L"PUT", L"/manager/config", original);
     ShowPage(L"模型庫");
     co_await Capture(L"模型庫");
     JsonObject result;
     result.SetNamedValue(L"ok", JsonValue::CreateBooleanValue(true));
-    for (auto key : {L"editor_fields", L"dynamic_fields", L"dirty_navigation",
-                     L"conflict_preserved", L"unknown_fields_preserved", L"optional_sampling",
-                     L"profile_array_save", L"system_save", L"profile_add_duplicate"})
+    for (auto key :
+         {L"editor_fields", L"dynamic_fields", L"dirty_navigation", L"conflict_preserved",
+          L"unknown_fields_preserved", L"optional_sampling", L"profile_array_save", L"system_save",
+          L"profile_add_duplicate", L"profile_delete_confirm", L"unicode_editor_search"})
         result.SetNamedValue(key, JsonValue::CreateBooleanValue(true));
     result.SetNamedValue(L"ui_parity_verified", JsonValue::CreateBooleanValue(false));
     TestResult(result);

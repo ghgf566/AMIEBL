@@ -61,9 +61,11 @@ IAsyncAction MainWindow::SaveConfig(std::function<void(JsonObject const &)> edit
     // Publish PUT's validated result before attempting the optional status read.
     config = co_await core->Request(L"PUT", L"/manager/config", latest);
     configRevision++;
+    savedStatusUnavailable = false;
     try {
         status = co_await core->Request(L"GET", L"/manager/status");
     } catch (hresult_error const &) {
+        savedStatusUnavailable = true;
         Message(L"設定已儲存，但暫時無法刷新服務狀態。請稍後重新整理。");
     }
     UpdateFooter();
@@ -102,8 +104,6 @@ IAsyncAction MainWindow::SaveEditor() {
     bool priorStartup = flag(config, L"auto_start");
     co_await SaveConfig(
         [draft, changed](JsonObject const &latest) { draft->Merge(latest, changed); });
-    if (draft->revision == revision)
-        draft->dirty = false;
     if (draft->collection == L"system" && priorStartup != flag(config, L"auto_start")) {
         std::exception_ptr failure;
         try {
@@ -118,6 +118,8 @@ IAsyncAction MainWindow::SaveEditor() {
             std::rethrow_exception(failure);
         }
     }
+    if (draft->revision == revision)
+        draft->dirty = false;
     auto persisted =
         draft->collection == L"system" ? config : entity(config, draft->collection, draft->id);
     hstring normalized;
@@ -139,7 +141,7 @@ IAsyncAction MainWindow::SaveEditor() {
             RestoreEntitySelection(draft->collection);
         }
     }
-    if (Notice().Message() != L"設定已儲存，但暫時無法刷新服務狀態。請稍後重新整理。")
+    if (!savedStatusUnavailable)
         Message(ApplicationState() +
                 (normalized.empty() ? hstring()
                                     : L"。後端調整了：" + normalized + L"；已顯示實際儲存值。"));

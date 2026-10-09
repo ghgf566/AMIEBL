@@ -54,8 +54,26 @@ No main/tag/release change is authorized. PR #8 stays Draft.
   system persistence, close-to-background, second-process reveal, attached Core
   protection, owned Core restart and retained drafts.
 - Sanitized three-page screenshots and lifecycle results are retained locally.
-  git diff --check passes. Packaging script parses; packaged execution and
-  new-commit CI results are recorded separately when available.
+  git diff --check passes.
+- The follow-up Unicode whitespace/ordinal-search and save-state fixes pass
+  a fresh Release x64 build and all five GUI cases in **32.209 s**. Tests now
+  include non-ASCII whitespace, accented case-insensitive search and actual
+  profile-deletion cancel/confirm controls. Startup registration failure keeps
+  the draft dirty; registry-denial simulation remains unverified.
+- Build-Development.ps1 produced Release GUI + Release Rust Core artifacts
+  at 68b951d. That package passes startup and all five real GUI cases in
+  **31.100 s**. No Python/.NET runtime, model, engine, token or personal
+  configuration payload is included. Final follow-up artifacts are rebuilt
+  and rechecked separately; no clean-machine claim follows from this.
+- Code checkpoint 68b951d is pushed. Its migration workflow
+  [37917596449](https://github.com/ghgf566/AMIEBL/actions/runs/37917596449)
+  and release-safety workflow
+  [37917603065](https://github.com/ghgf566/AMIEBL/actions/runs/37917603065)
+  pass. CI's native GUI job runs five cases successfully in 28.960 s;
+  RustSec passes. Its CodeQL workflow
+  [37917603119](https://github.com/ghgf566/AMIEBL/actions/runs/37917603119)
+  has successful C#/Python jobs; C++ analysis is still running at this update.
+  A later follow-up SHA must receive its own CI result; these are not its checks.
 
 ### Confirmed equivalent (finite cases)
 
