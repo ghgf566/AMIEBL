@@ -41,7 +41,7 @@ async fn safety_gate(State(state):State<Arc<Preview>>,request:Request,next:Next)
         }
     }
     let mut response=next.run(request).await;
-    response.headers_mut().insert("X-AMIEBL-Migration-Preview",HeaderValue::from_static("true"));
+    response.headers_mut().insert("x-amiebl-migration-preview",HeaderValue::from_static("true"));
     response
 }
 async fn health()->Json<Value>{
