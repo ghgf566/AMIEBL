@@ -32,6 +32,10 @@ jobs:
         run: dotnet run --project tests/DesktopCoreRegression -c Release
       - name: Verify desktop process and data handling
         run: dotnet run --project tests/DesktopPlatformRegression -c Release
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: Run native Rust core unit tests
+        run: cargo test --manifest-path native-core/Cargo.toml --locked
       - name: State release limitation
         shell: pwsh
         run: Write-Host 'REFERENCE TESTS ONLY. Rust HTTP parity, C++/WinRT GUI parity and clean Windows runtime installation are NOT YET verified.'
