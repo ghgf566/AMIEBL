@@ -7,3 +7,5 @@
 pub mod config;
 
 pub mod vscode;
+
+pub mod storage;
