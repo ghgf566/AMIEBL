@@ -60,6 +60,22 @@ SHA-256 manifest are now preserved under `baselines/v1.0.0/`. Capture build
 metadata is a3440cb; desktop source trees were checked identical to v1.0.0.
 All-DPI, interaction video and remaining states are still absent.
 
+Final code commit `3db8f8a60b676327b184afa7ac8ac045d3a1cf96`:
+- Migration CI [37911508437](https://github.com/ghgf566/AMIEBL/actions/runs/37911508437)
+  succeeds: frozen reference/native regression, RustSec, Release x64 native
+  build, window startup and all three real GUI/Core integration cases.
+- CodeQL [37911515753](https://github.com/ghgf566/AMIEBL/actions/runs/37911515753)
+  and frozen release-safety [37911515575](https://github.com/ghgf566/AMIEBL/actions/runs/37911515575)
+  succeed. Frozen release-safety still does not test native installation.
+- Local rebuild and three GUI cases pass again after the harness correction.
+  Local JSON reports animations_enabled=true and expander_reversal_checked=true.
+- Frozen original WinUI Test-Desktop rerun passes save/switch/restore, all five
+  reference pages and owned shutdown, recreating screenshots/animation evidence.
+- main/tag remain eab5dc1; PR #8 stays Draft. No production GUI was removed.
+
+These successful checks close this specific integration/harness stage. They
+**do not** close complete Core/UI parity, native deployment or milestones A-C.
+
 **Not complete:** models/profiles/system page builders, all editors and dirty
 state, tray/background close, single instance, complete reconnection/timeouts,
 all DPI/keyboard/manual visual acceptance, real CPU/CUDA inference, independent
