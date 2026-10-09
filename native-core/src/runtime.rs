@@ -612,16 +612,29 @@ impl Manager {
         let port = self
             .engine_port
             .unwrap_or(config["engine_port"].as_u64().unwrap() as u16);
-        let reusable_owned_port = if replacing_owned_port {
-            matches!(timeout(Duration::from_millis(200), tokio::net::TcpStream::connect((std::net::Ipv4Addr::LOCALHOST, port))).await,
-                Ok(Err(e)) if e.kind() == std::io::ErrorKind::ConnectionRefused)
-        } else {
-            false
-        };
-        // A just-terminated owned engine can leave Windows TIME_WAIT sockets.
-        // Permit its original port only after wait() and a refused connection;
-        // never skip the conflict check for an external or newly selected port.
-        if !free_port(port) && !reusable_owned_port {
+        let mut available = free_port(port);
+        // wait() has completed before this path. Windows can still be settling
+        // sockets from that owned child; allow a bounded exclusive-bind recheck
+        // only for its original port. A timeout is never evidence of availability.
+        if !available && replacing_owned_port {
+            let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
+            while !available && tokio::time::Instant::now() < deadline {
+                tokio::time::sleep(Duration::from_millis(50)).await;
+                available = free_port(port);
+            }
+            if !available {
+                available = matches!(
+                    timeout(
+                        Duration::from_secs(2),
+                        tokio::net::TcpStream::connect((std::net::Ipv4Addr::LOCALHOST, port)),
+                    ).await,
+                    Ok(Err(e)) if e.kind() == std::io::ErrorKind::ConnectionRefused
+                );
+            }
+        }
+        // Never relax the conflict check for an external or newly selected port,
+        // and never stop another process to obtain it.
+        if !available {
             return Err(format!(
                 "模型引擎連接埠 {port} 已被使用。請停止舊啟動器或更換連接埠。"
             ));

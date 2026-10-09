@@ -76,20 +76,36 @@ Local Windows x64 checks for the new milestone:
 - DesktopCoreRegression and DesktopPlatformRegression: passed.
 - C++ Release x64 compile and actual native startup/close: passed.
 - Frozen WinUI desktop interaction/render/animation regression: passed.
-- Full 210-test Python/native discovery and final native runtime scenarios:
-  final verification in progress at this implementation checkpoint.
+- All 73 runtime scenarios passed locally after the bounded owned-port fix:
+  64 unchanged Rust/reference assertions, one 20-cycle Rust reload stress case,
+  plus four edge scenarios executed against both Python and Rust.
+- Full 210-test discovery at implementation commit `05b9347` passed 209; the
+  frozen Python same-model explicit-reload case failed with a local Windows
+  port conflict. Its isolated repeat reproduced the failure. Backend/reference
+  assertions remain unchanged. Rust passed all cases in that run.
+- GitHub independently passed the full 210-test suite, native GUI build/startup
+  and RustSec audit at `05b9347`: [migration run](https://github.com/ghgf566/AMIEBL/actions/runs/37899870165).
+  [Release safety/reference builds](https://github.com/ghgf566/AMIEBL/actions/runs/37899878182)
+  and [CodeQL](https://github.com/ghgf566/AMIEBL/actions/runs/37899878180) also passed.
+  Those release builds package the old Python/C# product, not the native target.
+- The subsequent reload fix adds a 211th full-suite test; its CI result is
+  pending at this follow-up checkpoint.
 
 The first runtime run passed 63/64 reference scenarios, failing same-model
 reload. Subsequent stress/full runs reproduced Windows port rebind failures
 in both the frozen Python reference and Rust. Rust now uses the reference
 exclusive bind probe, does not retain idle engine sockets, and recognizes a
-just-terminated **owned** original port only when a TCP connection is refused.
+just-terminated **owned** original port after a bounded two-second exclusive
+bind recheck or a refused TCP connection. A connection timeout is never treated
+as availability. A 200-ms connection probe alone was insufficient on this host;
+additional stress reproduced that defect after the first green CI, so the
+bounded recheck and 20-cycle regression were added.
 External/new ports still require the normal conflict check; no external
 process is stopped. Repeated runtime shutdown also exposed one temporary log
 lock; background resource observation is now joined before exit. One later
 queued-cancel run raised a Windows socket ReadError; isolated repeats passed.
-These observations are retained pending final regression/CI, not hidden by
-changing reference assertions or adding blanket retries.
+These observations are retained, not hidden by changing reference assertions
+or retrying inference. The local frozen-reference failure remains unresolved.
 
 The migration workflow now requires the actual runtime executable (missing
 binary is a failure), runs both services' scenarios, whole-crate fmt/Clippy,
@@ -98,7 +114,8 @@ Green checks remain finite coverage, never a migration-complete declaration.
 Local C++ tooling was assembled under the isolated work directory from official
 Visual Studio catalog packages with SHA-256 checks because this host lacked
 UWP/XAML build support. No shared Visual Studio installation was changed.
-GitHub's Windows runner must independently reproduce the ordinary project build.
+GitHub's Windows runner independently reproduced the ordinary project build
+and native startup test at the implementation commit.
 
 ## Remaining release blockers and next work
 

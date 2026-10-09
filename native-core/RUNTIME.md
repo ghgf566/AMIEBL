@@ -29,7 +29,9 @@ AMIEBL_REQUIRE_NATIVE_TESTS=1 python -m unittest discover -s tests -p 'test_nati
 ```
 
 `test_native_runtime_integration.py` reuses all 64 original reference HTTP
-assertions, changing only the manager launch command. `test_native_runtime_edges.py`
+assertions, changing only the manager launch command, plus a native-only
+20-reload regression that verifies one engine start and one upstream inference
+per request. `test_native_runtime_edges.py`
 executes the same additional live cancellation/log-rotation/crash scenarios
 against both services. No backend tests or fake-engine behavior are weakened.
 These scenarios are finite coverage, not proof of every v1.0.0 behavior.

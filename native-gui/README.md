@@ -8,7 +8,8 @@ SmoothExpander, tray, draft state, or GUI–Core transport yet. The empty PageHo
 is an explicit migration gap, not a functional page or a parity claim. Never
 package this target as LocalModelManager or replace the C# application with it.
 
-Build with Visual Studio C++ desktop/Windows SDK tools:
+Build with Visual Studio C++ desktop tools, the Windows SDK, and C++ UWP/XAML
+build support (the Windows App SDK XAML compiler imports these C++ targets):
 
 ```
 msbuild native-gui/AMIEBL.Native.vcxproj /restore /p:Configuration=Release /p:Platform=x64

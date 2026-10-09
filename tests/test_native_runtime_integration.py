@@ -35,6 +35,19 @@ class NativeRuntimeIntegration(reference.ManagerIntegration):
         with patch.object(reference.subprocess, "Popen", side_effect=native_manager):
             super().setUp()
 
+    def test_repeated_native_owned_port_reload_does_not_resend_inference(self):
+        self.load()
+        for iteration in range(20):
+            config = self.get("/manager/config")
+            config["models"][0]["context"] = 4096 if iteration % 2 == 0 else 8192
+            response = self.api("PUT", "/manager/config", json=config)
+            self.assertEqual(response.status_code, 200, response.text)
+            response = self.completion("reload single owned slot")
+            self.assertEqual(response.status_code, 200, response.text)
+            self.assertEqual(len(self.events("start")), iteration + 2)
+            self.assertEqual(len(self.events("post")), iteration + 1)
+            self.assertFalse(self.get("/manager/status")["pending_model_reload"])
+
 
 if __name__ == "__main__":
     unittest.main()
