@@ -31,7 +31,8 @@ def http(base, endpoint, *, token=None, origin=None):
         with urllib.request.urlopen(request,timeout=5) as reply:
             return reply.status,json.loads(reply.read()),dict(reply.headers)
     except urllib.error.HTTPError as error:
-        return error.code,json.loads(error.read()),dict(error.headers)
+        raw=error.read()
+        return error.code,(json.loads(raw) if raw else None),dict(error.headers)
 
 class NativePreviewSmokeTests(unittest.TestCase):
     def setUp(self):
@@ -74,7 +75,7 @@ class NativePreviewSmokeTests(unittest.TestCase):
                 status,conf,headers=http(base,"/manager/config",token=token)
                 self.assertEqual(status,200)
                 self.assertEqual(conf["schema_version"],1)
-                self.assertIn("X-AMIEBL-Migration-Preview",headers)
+                self.assertIn("x-amiebl-migration-preview",{key.lower() for key in headers})
                 status,export,_=http(base,"/manager/export",token=token)
                 self.assertEqual(status,200)
                 self.assertEqual(export,conf)
