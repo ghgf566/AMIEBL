@@ -382,7 +382,8 @@ mod tests {
         c["engine_port"]=json!(8080);
         assert!(validate_config(c.clone()).is_err());
         c["engine_port"]=json!(8081);
-        c["profiles"].as_array_mut().unwrap().push(c["profiles"][0].clone());
+        let duplicate = c["profiles"][0].clone();
+        c["profiles"].as_array_mut().unwrap().push(duplicate);
         assert!(validate_config(c).is_err());
     }
     #[test]
