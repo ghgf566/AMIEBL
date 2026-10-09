@@ -44,6 +44,10 @@ jobs:
         run: cargo build --manifest-path native-core/Cargo.toml --bin gguf-probe
       - name: Compare Rust GGUF and reasoning against Python v1.0.0
         run: python -m unittest discover -s tests -p "test_native_gguf_parity.py" -v
+      - name: Compile isolated Rust HTTP preview
+        run: cargo build --manifest-path native-core/Cargo.toml --bin amiebl-core-preview
+      - name: Verify loopback-only preview, admin token and safe data directory
+        run: python -m unittest discover -s tests -p "test_native_http_preview.py" -v
       - name: Check frozen reference route and navigation inventory
         run: python -m unittest discover -s tests -p "test_v11_baseline_inventory.py" -v
       - name: Execute the original regression test suite
