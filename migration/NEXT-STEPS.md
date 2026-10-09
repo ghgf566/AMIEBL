@@ -29,6 +29,10 @@
 
 Ollama／SGLang／vLLM 留至 2.0.0；目前保留 engine_id 與來源／套件模組接點，尚未實作其他 provider。
 
+## 後續版本 Roadmap（跨對話設計依據）
+
+詳細、持續維護的版本規劃見儲存庫根目錄 **[ROADMAP.md](../ROADMAP.md)**。**v1.2.0 已確定為模型設定系統大更新**：以 Capability Registry 結合 GGUF 模型、llama.cpp 引擎版本／運算後端與硬體，動態呈現 Attention、RoPE／YaRN、KV Cache、Batch、記憶體等經驗證的調整選項；狀態明分已支援／不支援／未知。**v1.3.0** 規劃更底層 Tensor Placement 與 CPU/GPU 配置；**v2.0.0** 規劃多 Provider。上述為未來版本方向，不得視為 1.1.0 的新增發布阻塞項目。
+
 ## 儲存庫定位
 
 原生 AMIEBL 執行不依賴 Python 或 .NET：GUI 為 C++/WinRT，管理服務為 Rust，推理由獨立 llama.cpp server 提供。Python 及 .NET 僅留作開發測試與舊版參考；目前舊 installer 尚未完成原生替換，不能把它視為新的正式交付。驗收完成後再整理或封存參考實作，不要求使用者安裝 Python。
