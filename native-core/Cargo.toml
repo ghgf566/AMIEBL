@@ -16,3 +16,6 @@ regex = "1.12"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 tempfile = "3.23"
 uuid = { version = "1.18", features = ["v4"] }
+axum = "0.8"
+tokio = { version = "1.47", features = ["rt-multi-thread", "macros", "net", "signal"] }
+subtle = "2.6"
