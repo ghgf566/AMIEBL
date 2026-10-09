@@ -15,7 +15,7 @@ AMIEBL 是專為 **Windows 本地 AI 模型與 VS Code Agent** 使用情境設�
 **桌面介面：** WinUI 3 / Windows App SDK / .NET 10
 **授權：** [Apache License 2.0](LICENSE)
 
-[Releases](https://github.com/ghgf566/AMIEBL/releases) · [使用說明](使用說明.md) · [架構與驗證](DESKTOP-ARCHITECTURE.md) · [安全性政策](SECURITY.md)
+[Releases](https://github.com/ghgf566/AMIEBL/releases) · **[版本規劃 ROADMAP](ROADMAP.md)** · [使用說明](使用說明.md) · [架構與驗證](DESKTOP-ARCHITECTURE.md) · [安全性政策](SECURITY.md)
 
 ## 為什麼開發 AMIEBL？
 
