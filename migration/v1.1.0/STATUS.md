@@ -75,6 +75,34 @@ No main/tag/release change is authorized. PR #8 stays Draft.
   has successful C#/Python jobs; C++ analysis is still running at this update.
   A later follow-up SHA must receive its own CI result; these are not its checks.
 
+### Final follow-up evidence at code checkpoint 387f9d3
+
+- Latest code is pushed at **387f9d3b9e481137d1707ace2bfb9ce9f17598a0**.
+  A fresh complete local run passes **217/217 tests in 345.882 s**, with
+  required native and GUI cases enabled. No reference expectation was changed.
+- The rebuilt Release GUI + Release Rust Core development package passes
+  native startup and all five actual GUI cases in **31.948 s**. All packaged
+  file hashes match SHA256SUMS. It contains no GGUF, engine, admin token,
+  personal configuration, Python runtime or .NET runtime.
+- Package source is 387f9d3; ZIP SHA-256 is
+  `a53a27dd5fe2d1bc891224f0282542a0aa75ca904706dff397a863a03d5f5fde`.
+  It is development-only and does not prove clean-machine installation.
+- 387f9d3 migration workflow
+  [37918578929](https://github.com/ghgf566/AMIEBL/actions/runs/37918578929)
+  and release-safety workflow
+  [37918585801](https://github.com/ghgf566/AMIEBL/actions/runs/37918585801)
+  pass. The real native GUI CI job passes five cases in **30.357 s**.
+  RustSec passes. Its CodeQL workflow
+  [37918585816](https://github.com/ghgf566/AMIEBL/actions/runs/37918585816)
+  passes all three C#/Python/C++ jobs, including real C++/WinRT compilation,
+  extraction, analysis and results upload. All three workflows for the code
+  checkpoint are successful.
+- The earlier 68b951d CodeQL workflow is now fully successful, including
+  actual C++/WinRT build, C++ extraction, analysis and results upload.
+- Subsequent documentation-only commits do not change this tested code or
+  package source. Their separately triggered checks must not be represented
+  as the code checkpoint's checks.
+
 ### Confirmed equivalent (finite cases)
 
 The tested merge/conflict/unknown-field, optional sampling, tools-array,
@@ -89,8 +117,8 @@ picker/tray interaction, startup registration and hardware parity remain
 **unverified**. Full import/export/scan/removal/default-selection UI acceptance,
 all persistence/refresh failure permutations and editor animation timing need
 broader coverage. Production startup-key migration and clean-machine native
-dependency/installer acceptance remain pending. Native C++ CodeQL is newly
-enabled and awaits the pushed commit's workflow result.
+dependency/installer acceptance remain pending. Native C++ CodeQL passes at
+the tested code checkpoint; this does not prove complete security or UI parity.
 No milestone A-E or complete product equivalence is declared merely from a build.
 
 ## Historical GUI/Core checkpoint at 2b4887d
