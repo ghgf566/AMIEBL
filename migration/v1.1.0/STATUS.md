@@ -1,94 +1,123 @@
-# v1.1.0 native migration — continuation status
+# v1.1.0 native migration — current continuation status
 
-**IN PROGRESS. Not a usable replacement, not release ready.**
+**IN PROGRESS. Not release ready. PR #8 is Draft. No acceptance gate is waived.**
 
-This report records the 2026-10-09 continuation from branch head
-`70731a02610f2730c1d6b666bc3f94ec8979563b`. The governing acceptance criteria
-remain [PARITY_CONTRACT.md](PARITY_CONTRACT.md); no feature or gate is waived.
+Continued on 2026-10-09 from verified remote head
+`a3440cb089d26e49b9a4dfa6c8ca8908d7708e03`. No intervening agent commit
+was present. `main` and the commit behind `v1.0.0` remain
+`eab5dc1451bf38d1c008558ba8d49c85954c04bb`; neither is modified.
+[PARITY_CONTRACT.md](PARITY_CONTRACT.md), `CONTRACT.md`, and
+`DESKTOP-ARCHITECTURE.md` remain the governing requirements.
 
-## Frozen reference
+## Actual runtime milestone
 
-- `main` and the commit behind the annotated `v1.0.0` tag both resolve to
-  `eab5dc1451bf38d1c008558ba8d49c85954c04bb` at the start of this continuation.
-  The tag object itself is `ad2609441aee94d53be6e31e2eb19352195a1df0`.
-- `backend/manager.py` on the migration branch is identical to the tagged
-  source. The new request differential suite verifies its SHA-256 after
-  normalizing checkout line endings:
-  `0e91761e818b8974d3a0b455eaa4e9a3d6e36ff71052b216361eac57e75d79e7`.
-- The previous head's frozen-reference, release-safety/build and CodeQL
-  workflows passed. Those results establish the previous reference checks,
-  **not** full Rust/C++ equivalence.
+The new `native-core/src/runtime.rs`, `runtime/watch.rs` and
+`src/bin/amiebl-core.rs` implement an actual Tokio/Axum inference service,
+separate from the unchanged read-only preview. Explicit development opt-in
+and an isolated data directory are required. Production packaging still uses
+the frozen Python/C# reference; this milestone does not replace it.
 
-## Native code now available
+Implemented and wired through the service:
 
-| Area | Implemented migration unit | Boundary |
-| --- | --- | --- |
-| Configuration | Schema/defaults/startup normalization, unknown fields | Existing differential tests; not a complete manager config mutation API |
-| Storage | Atomic settings/token storage and backups | Startup capability reconciliation and history side effects still need runtime integration |
-| VS Code | JSONC, owned models, agent files, backups | Existing differential tests; continuous watcher and full lifecycle still pending |
-| GGUF | Metadata, split shards, reasoning/MTP capabilities | Existing differential tests; real engine `/props` integration still pending |
-| Inference request policy | Validation/error order; model/alias/header/agent marker resolution; output caps; sampling; classifier; native efforts; thinking switches; client overrides; auto/custom budgets and output reserve | New `request.rs` and `request-probe`; shared pre-inference logic, **not** an inference worker or transport |
-| HTTP | Four read-only routes in an isolated preview | Refuses production port/existing config; no inference, lifecycle, or mutations; never packaged |
+- Original 22 HTTP method/route combinations, loopback binding, management
+  token/origin checks, config/import/export, GGUF scanning/capabilities,
+  records/log clearing, connection and VS Code preview/apply.
+- Bounded admission (32 including the active ticket), one inference worker,
+  model/profile snapshots, request validation and the verified `request.rs`
+  policy, terminal records/history/pruning and opt-in bounded body logging.
+- Real upstream OpenAI nonstream/SSE transport, conversation/request headers,
+  fragmented UTF-8/tool argument preservation, streaming backpressure,
+  token/timing observation, original thinking/sampling/client override rules.
+- Owned engine child launch, argument generation (CPU/GPU/vision/native or
+  external MTP), fit process/timeout, GGUF prevalidation, health/props readiness,
+  runtime capability persistence, unload/reload/deferred unload and idle handling.
+- Cancellation in queue, loading, preheaders, streaming and client disconnect;
+  upstream DELETE replay, slot-idle verification and owned-child fallback
+  before the worker advances. No inference is automatically resent.
+- VS Code initial log skip, recent-file discovery, new/rotated-file tail replay,
+  partial-line handling, timestamp filtering and active-only cancellation.
+  Windows RAM and nvidia-smi GPU observation; background work is joined on exit.
 
-The request suite executes actual Python `submit()` and `policy()` on the same
-JSON as Rust, compares complete forwarded bodies, model/profile snapshots,
-record fields and rejection messages. Only measured classifier elapsed time is
-allowed to vary; its native value must still be finite and nonnegative.
-Multimodal content, tools, unknown fields, Unicode markers, integral float
-settings, and the frozen classifier's literal regex escapes are characterized.
-The required CI step fails if its probe is missing instead of reporting a skip.
+`storage.rs` adds atomic capability persistence without creating user-edit
+backups. Earlier native source edits otherwise mainly apply whole-crate
+rustfmt and four behavior-preserving Clippy diagnostics fixes.
 
-`native-core/Cargo.lock` is committed, CI uses `--locked`, and native build
-outputs are ignored. Native Rust source under `src/bin/` is explicitly tracked.
-No Python/C# baseline behavior or production packaging is replaced in this step.
+The existing 64 Fake Engine HTTP tests run against Rust by changing only the
+manager launch command. Eight additional tests execute four identical live
+scenarios against Python and Rust: log history/stale/partial events, new-log
+rotation with queued work, slot handoff after cancellation and crash/reload.
+Original backend code, fake engine and test assertions remain unchanged.
 
-## Local validation (Windows x64, 2026-10-09)
+## Native GUI and visual baseline
 
-- `cargo build --locked --manifest-path native-core/Cargo.toml --bins`: passed.
-- `cargo test --locked --manifest-path native-core/Cargo.toml`: **19 passed**.
-- Required request differential suite: **7 tests, 500 complete comparisons**,
-  passed without skips.
-- Full Python/native/reference regression discovery: **138 passed**, no skips,
-  in 185.772 seconds. This includes the old fake-engine integration cases and
-  existing config, VS Code, GGUF, preview, baseline and packaging checks.
-- C# DesktopCoreRegression and DesktopPlatformRegression: both passed. These
-  remain frozen-reference checks, not C++ UI acceptance.
-- The two HTTP preview tests additionally passed with ResourceWarning treated
-  as an error after closing HTTPError responses explicitly in their helper.
-- Targeted native source formatting and `git diff --check`: passed.
+`native-gui/AMIEBL.Native.vcxproj` is a real C++20/C++/WinRT WinUI 3 target
+with app-local Windows App SDK. Its MainWindow XAML is copied from v1.0.0
+with only the class namespace changed. The native window compiles, initializes
+its XAML/resources and closes in an actual process startup test.
 
-An earlier standalone run of the 64 reference manager integration tests had
-one 10-second model-reload timeout. The same test passed on an isolated rerun
-and in the subsequent full 138-test run; no frozen backend code was changed.
-This observation is retained for future native lifecycle/stress acceptance,
-not treated as evidence of full runtime equivalence.
+**The PageHost is still empty. Five page builders, editors, SmoothExpander,
+navigation animation, tray, dirty drafts, focus/DPI, Windows integration and
+GUI–Core transport have not been ported. The native shell is not UI parity and
+must not replace or be packaged as the existing C# GUI.**
 
-## Remaining blocking work
+The frozen C# WinUI build and its actual desktop regression passed locally.
+Ten rendered captures (five pages plus expanded/compact states) and the JSON
+interaction/animation measurements were saved as local acceptance artifacts.
+They establish the reference, not native equivalence. Full DPI captures,
+recordings, pixel comparisons and human acceptance remain outstanding.
 
-1. Real Tokio runtime: bounded single-slot queue, task records/history/privacy,
-   worker/backpressure and cancellation in **every** phase. HTTP management
-   methods, errors, auth/origin checks and persistence side effects must match.
-2. OpenAI gateway: streaming and nonstreaming, fragmented UTF-8/SSE/tool calls,
-   IDs, upstream failure handling, disconnect cancellation, no duplicate
-   inference, `DELETE /v1/stream`, slot verification and owned-process fallback.
-3. Engine: load/unload/reload/deferred actions, fitting, CPU/CUDA configuration,
-   runtime capability refinement, monitoring and safe owned-process lifetime.
-4. Versioned independent engine installer: checksum/provenance, CPU/CUDA DLLs,
-   download/extract/install/update/rollback, offline use and custom-directory
-   protection, with corrupt archive/failure acceptance tests.
-5. C++20/C++/WinRT WinUI 3 implementation: all five pages, editors, animations,
-   draft state, focus/accessibility, DPI, pickers/dialogs, tray and Windows
-   integration. No native GUI implementation exists yet in this branch.
-6. Frozen baseline screenshots/recordings and complete native UI/UX interaction
-   comparisons; GUI–Core–engine end-to-end acceptance.
-7. App-local/self-contained Windows App SDK, native installer/portable delivery,
-   clean Windows 10/11 tests without Python/.NET/shared App SDK, security,
-   dependency/license and exact packaged-asset checks.
+## Validation and reproducibility
 
-The next runtime implementation must call the verified request policy from the
-real worker, then compare the native service and frozen Python service against
-the same fake engine, including queue/cancellation/failure cases. Expanding the
-isolated read-only preview is not a substitute for that acceptance gate.
+Local Windows x64 checks for the new milestone:
 
-**No main merge, release, or migration-complete claim is authorized by these
-component checks. v1.0.0 remains the usable baseline.**
+- Locked native build: passed.
+- Rust unit tests: 19 passed.
+- Whole-crate rustfmt check and strict all-targets Clippy: passed.
+- DesktopCoreRegression and DesktopPlatformRegression: passed.
+- C++ Release x64 compile and actual native startup/close: passed.
+- Frozen WinUI desktop interaction/render/animation regression: passed.
+- Full 210-test Python/native discovery and final native runtime scenarios:
+  final verification in progress at this implementation checkpoint.
+
+The first runtime run passed 63/64 reference scenarios, failing same-model
+reload. Subsequent stress/full runs reproduced Windows port rebind failures
+in both the frozen Python reference and Rust. Rust now uses the reference
+exclusive bind probe, does not retain idle engine sockets, and recognizes a
+just-terminated **owned** original port only when a TCP connection is refused.
+External/new ports still require the normal conflict check; no external
+process is stopped. Repeated runtime shutdown also exposed one temporary log
+lock; background resource observation is now joined before exit. One later
+queued-cancel run raised a Windows socket ReadError; isolated repeats passed.
+These observations are retained pending final regression/CI, not hidden by
+changing reference assertions or adding blanket retries.
+
+The migration workflow now requires the actual runtime executable (missing
+binary is a failure), runs both services' scenarios, whole-crate fmt/Clippy,
+adds a RustSec locked-dependency audit, and builds/exercises the native GUI.
+Green checks remain finite coverage, never a migration-complete declaration.
+Local C++ tooling was assembled under the isolated work directory from official
+Visual Studio catalog packages with SHA-256 checks because this host lacked
+UWP/XAML build support. No shared Visual Studio installation was changed.
+GitHub's Windows runner must independently reproduce the ordinary project build.
+
+## Remaining release blockers and next work
+
+1. Expand lifecycle/cancellation stress coverage: cancellation with shared
+   loading, unsupported DELETE/slots and forced owned termination, fit failure/
+   timeout, 300-second readiness timeout, queue saturation, shutdown races,
+   persistence failures and every API rejection/header/large-body case.
+2. Verify with real llama.cpp CPU/CUDA/GGUF generation and cancellation,
+   capability differences and full Windows owned-process/GUI lifetime. Fake
+   Engine HTTP evidence does not certify real model/hardware behavior.
+3. Port the full five-page C++ GUI and all editor/animation/tray/Windows behavior
+   against frozen screenshots and interaction measurements; retain C# until
+   complete visual and end-to-end acceptance.
+4. Implement the separately versioned CPU/CUDA runtime package manager:
+   trusted source, SHA-256, resumable download, atomic install, corrupt archives,
+   rollback/offline use and external-engine/model path protection.
+5. Complete versioned GUI–Core negotiation, native Portable/Setup packaging,
+   app-local CRT/App SDK dependency audit, clean Windows 10/11 installation,
+   uninstall/data protection, DPI/accessibility/human acceptance and licenses.
+
+No main merge, tag mutation, release publication, or relaxed parity requirement
+is authorized. v1.0.0 remains the supported usable product.

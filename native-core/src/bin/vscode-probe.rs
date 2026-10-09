@@ -20,7 +20,8 @@ fn run(query: &Value) -> Result<Value, String> {
             query["display_name"].as_str(),
         )?)),
         "frontmatter" => Ok(json!(vscode::update_frontmatter(
-            query["text"].as_str().unwrap_or(""), query["model_name"].as_str()
+            query["text"].as_str().unwrap_or(""),
+            query["model_name"].as_str()
         )?)),
         "preview" => Ok(vscode::preview_at(
             config,
@@ -33,7 +34,7 @@ fn run(query: &Value) -> Result<Value, String> {
             Path::new(query["models_file"].as_str().ok_or("missing models_file")?),
             Path::new(query["agents_dir"].as_str().ok_or("missing agents_dir")?),
         ),
-        _ => Err(format!("unsupported op {op}"))
+        _ => Err(format!("unsupported op {op}")),
     }
 }
 
@@ -50,5 +51,5 @@ fn main() {
         Ok(value) => json!({"ok":true,"result":value}),
         Err(error) => json!({"ok":false,"error":error}),
     };
-    println!("{}",serde_json::to_string(&output).unwrap());
+    println!("{}", serde_json::to_string(&output).unwrap());
 }

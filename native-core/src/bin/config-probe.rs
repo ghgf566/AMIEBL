@@ -21,7 +21,11 @@ fn main() {
         }
     };
     let startup = std::env::args().any(|arg| arg == "--startup");
-    let input = if startup { normalize_startup_config(input) } else { input };
+    let input = if startup {
+        normalize_startup_config(input)
+    } else {
+        input
+    };
     match validate_config(input) {
         Ok(value) => println!("{}", json!({"ok":true,"result":value})),
         Err(error) => println!("{}", json!({"ok":false,"error":error})),
