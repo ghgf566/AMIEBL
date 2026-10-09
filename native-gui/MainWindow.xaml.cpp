@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "MainWindow.xaml.h"
+#include <microsoft.ui.xaml.window.h>
 #if __has_include("MainWindow.g.cpp")
 #include "MainWindow.g.cpp"
 #endif
@@ -53,15 +54,18 @@ MainWindow::MainWindow() {
         if (auto s = weak.get())
             s->UpdateIndicator();
     });
-    AppWindow().Closing(
-        [weak = get_weak()](auto const &,
+    AppWindow().Closing([weak = get_weak()](
+                            auto const &,
                             Microsoft::UI::Windowing::AppWindowClosingEventArgs const &e) {
-            if (auto s = weak.get())
-                if (!s->exiting) {
-                    e.Cancel(true);
+        if (auto s = weak.get())
+            if (!s->exiting) {
+                e.Cancel(true);
+                if (s->lifecycle && s->lifecycle->tray && flag(s->config, L"close_to_tray", true))
+                    s->AppWindow().Hide();
+                else
                     s->Run([s] { return s->Exit(); });
-                }
-        });
+            }
+    });
     timer.Interval(std::chrono::milliseconds(1500));
     timer.Tick([weak = get_weak()](auto const &, auto const &) {
         if (auto s = weak.get())
@@ -73,26 +77,70 @@ fire_and_forget MainWindow::StartAsync() {
     auto lifetime = get_strong();
     try {
         core = std::make_shared<CoreClient>();
+        HWND hwnd = nullptr;
+        check_hresult(get_strong().as<IWindowNative>()->get_WindowHandle(&hwnd));
+        lifecycle = std::make_unique<WindowsLifecycle>(
+            hwnd, core->dataDir, [weak = get_weak(), queue = DispatcherQueue()](int command) {
+                queue.TryEnqueue([weak, command] {
+                    if (auto s = weak.get()) {
+                        if (command == 0) {
+                            s->Reveal();
+                            return;
+                        }
+                        s->Run([s, command]() -> IAsyncAction {
+                            if (command == 1)
+                                co_await s->LoadDefault();
+                            else if (command == 2)
+                                co_await s->Unload();
+                            else if (command == 3)
+                                co_await s->ToggleKeep();
+                            else if (command == 4)
+                                co_await s->ToggleAccepting();
+                            else if (command == 5)
+                                co_await s->Exit();
+                        });
+                    }
+                });
+            });
+        if (!lifecycle->primary) {
+            exiting = true;
+            Close();
+            co_return;
+        }
         co_await core->Connect();
         config = co_await core->Request(L"GET", L"/manager/config");
         status = co_await core->Request(L"GET", L"/manager/status");
         connected = true;
+        lifecycle->AddTray();
         selecting = true;
         Navigation().SelectedItem(Navigation().MenuItems().GetAt(0));
         selecting = false;
         ShowPage(L"總覽");
+        if (CoreClient::HasFlag(L"--background") || flag(config, L"start_hidden"))
+            AppWindow().Hide();
         timer.Start();
         co_await Poll();
-        if (CoreClient::Option(L"--gui-test") == L"1") {
+        if (CoreClient::Option(L"--gui-test") == L"1" ||
+            CoreClient::Option(L"--editor-test") == L"1" ||
+            CoreClient::Option(L"--lifecycle-test") == L"1") {
             timer.Stop();
-            co_await GuiAcceptance();
+            if (CoreClient::Option(L"--lifecycle-test") == L"1")
+                co_await LifecycleAcceptance();
+            else if (CoreClient::Option(L"--editor-test") == L"1")
+                co_await EditorAcceptance();
+            else
+                co_await GuiAcceptance();
         }
     } catch (hresult_error const &e) {
         Error(e.message());
+        Reveal();
+        Notice().ActionButton(Action(L"重新連接", [this] { return Reconnect(); }));
     } catch (std::exception const &e) {
         Error(to_hstring(e.what()));
+        Reveal();
     }
-    if (CoreClient::Option(L"--gui-test") == L"1") {
+    if (CoreClient::Option(L"--gui-test") == L"1" || CoreClient::Option(L"--editor-test") == L"1" ||
+        CoreClient::Option(L"--lifecycle-test") == L"1") {
         if (Notice().Severity() == InfoBarSeverity::Error) {
             JsonObject result;
             result.SetNamedValue(L"ok", JsonValue::CreateBooleanValue(false));
@@ -103,6 +151,7 @@ fire_and_forget MainWindow::StartAsync() {
         timer.Stop();
         if (core)
             co_await core->Shutdown();
+        lifecycle.reset();
         Close();
     }
 }
@@ -165,7 +214,7 @@ Button MainWindow::Action(hstring label, ActionTask action) {
     Button b;
     b.Content(box_value(label));
     b.Margin({0, 0, 8, 4});
-    b.Command(make<ControlCommand>(
+    auto command = make<ControlCommand>(
         [weak = get_weak(), action] {
             if (auto s = weak.get())
                 s->Run(action);
@@ -173,7 +222,9 @@ Button MainWindow::Action(hstring label, ActionTask action) {
         [weak = get_weak()] {
             auto s = weak.get();
             return s && !s->working && !s->exiting;
-        }));
+        });
+    commands.push_back(make_weak(command));
+    b.Command(command);
     return b;
 }
 fire_and_forget MainWindow::Run(ActionTask action) {
@@ -181,6 +232,7 @@ fire_and_forget MainWindow::Run(ActionTask action) {
     if (working || exiting)
         co_return;
     working = true;
+    RefreshCommands();
     Navigation().IsEnabled(false);
     PageHost().IsEnabled(false);
     try {
@@ -193,6 +245,16 @@ fire_and_forget MainWindow::Run(ActionTask action) {
     working = false;
     Navigation().IsEnabled(true);
     PageHost().IsEnabled(true);
+    RefreshCommands();
+}
+void MainWindow::RefreshCommands() {
+    std::vector<weak_ref<Microsoft::UI::Xaml::Input::ICommand>> alive;
+    for (auto const &weak : commands)
+        if (auto command = weak.get()) {
+            alive.push_back(weak);
+            get_self<ControlCommand>(command)->changed(command, nullptr);
+        }
+    commands = std::move(alive);
 }
 void MainWindow::Error(hstring m) {
     Notice().Severity(InfoBarSeverity::Error);
@@ -216,15 +278,44 @@ IAsyncOperation<bool> MainWindow::Confirm(hstring text, hstring title) {
 }
 void MainWindow::Navigate(IInspectable const &,
                           NavigationViewSelectionChangedEventArgs const &args) {
-    if (!connected || selecting || working)
+    if (!connected || selecting)
         return;
     if (auto item = args.SelectedItem().try_as<NavigationViewItem>()) {
         auto next = unbox_value<hstring>(item.Tag());
-        if (next != page)
+        if (next == page)
+            return;
+        if (working) {
+            RestoreNavigation();
+            return;
+        }
+        if (!editor || !editor->dirty)
             ShowPage(next);
+        else
+            Run([this, next]() -> IAsyncAction {
+                try {
+                    if (co_await LeaveEditor())
+                        ShowPage(next);
+                    else
+                        RestoreNavigation();
+                } catch (...) {
+                    RestoreNavigation();
+                    throw;
+                }
+            });
     }
 }
 void MainWindow::ShowPage(hstring next) {
+    revealingEditor.reset();
+    capabilityText = nullptr;
+    editor.reset();
+    entityList = nullptr;
+    entityEditor = nullptr;
+    editorScroll = nullptr;
+    inputs.clear();
+    sliders.clear();
+    fieldBlocks.clear();
+    editorExpanders.clear();
+    entitySearch = L"";
     page = next;
     TitleText().Text(page);
     ExitButton().Visibility(page == L"系統" ? Visibility::Visible : Visibility::Collapsed);
@@ -232,9 +323,16 @@ void MainWindow::ShowPage(hstring next) {
         PageHost().Content(BuildOverview());
     else if (page == L"任務與紀錄")
         PageHost().Content(BuildTasks());
+    else if (page == L"模型庫")
+        PageHost().Content(BuildEntities(L"models"));
+    else if (page == L"使用模式")
+        PageHost().Content(BuildEntities(L"profiles"));
+    else if (page == L"系統")
+        PageHost().Content(BuildSystem());
     else
         PageHost().Content(nullptr);
     UpdateFooter();
+    RestoreNavigation();
     UpdateIndicator();
 }
 void MainWindow::UpdateIndicator() {
@@ -268,18 +366,24 @@ hstring MainWindow::ApplicationState() {
                                                    : L"已儲存；引擎載入設定無待處理差異";
 }
 void MainWindow::UpdateFooter() {
-    Footer().Text(ApplicationState() + L"　·　http://127.0.0.1:" +
+    Footer().Text((editor && editor->dirty ? hstring(L"編輯中，尚未儲存　·　") : hstring()) +
+                  ApplicationState() + L"　·　http://127.0.0.1:" +
                   to_hstring(core ? core->port : 8080));
 }
 IAsyncAction MainWindow::Poll() {
     if (!core || polling || exiting)
         co_return;
     polling = true;
+    auto revision = configRevision;
     try {
         if (core->OwnedExited())
             throw hresult_error(E_FAIL, L"背景服務異常退出；目前資料與紀錄保留，請重新啟動連線。");
         auto s = co_await core->Request(L"GET", L"/manager/status");
         auto r = co_await core->Request(L"GET", L"/manager/requests");
+        if (revision != configRevision) {
+            polling = false;
+            co_return;
+        }
         status = s;
         requests = array(r, L"requests");
         if (page == L"任務與紀錄") {
@@ -295,8 +399,20 @@ IAsyncAction MainWindow::Poll() {
         if (page == L"總覽")
             UpdateOverview();
         UpdateFooter();
+        if (lifecycle)
+            lifecycle->Update(L"AMIEBL · " + str(status, L"state"));
+        if (!working) {
+            auto fresh = co_await core->Request(L"GET", L"/manager/config");
+            if (!working && revision == configRevision) {
+                config = fresh;
+                configRevision++;
+                if (capabilityText && !selectedModel.empty())
+                    capabilityText.Text(ModelCapability(selectedModel));
+            }
+        }
     } catch (hresult_error const &e) {
         Error(e.message());
+        Notice().ActionButton(Action(L"重新連接", [this] { return Reconnect(); }));
     }
     polling = false;
 }
@@ -325,6 +441,8 @@ IAsyncAction MainWindow::ToggleKeep() {
     config = co_await core->Request(L"GET", L"/manager/config");
 }
 IAsyncAction MainWindow::ConnectVSCode() {
+    if (!(co_await LeaveEditor()))
+        co_return;
     auto p = co_await core->Request(L"GET", L"/manager/vscode/preview");
     if (co_await Confirm(str(p, L"summary", L"更新 VS Code 設定並備份既有內容？"),
                          L"同步至 VS Code")) {
@@ -333,6 +451,8 @@ IAsyncAction MainWindow::ConnectVSCode() {
     }
 }
 IAsyncAction MainWindow::Exit() {
+    if (!(co_await LeaveEditor()))
+        co_return;
     if (number(status, L"active_count") + number(status, L"queued_count") > 0 &&
         !(co_await Confirm(L"完全結束會取消目前任務並停止此程式啟動的服務。")))
         co_return;
@@ -340,7 +460,26 @@ IAsyncAction MainWindow::Exit() {
     timer.Stop();
     if (core)
         co_await core->Shutdown();
+    lifecycle.reset();
     Close();
+}
+void MainWindow::Reveal() {
+    revealCount++;
+    if (lifecycle)
+        lifecycle->Reveal();
+    AppWindow().Show();
+    Activate();
+}
+IAsyncAction MainWindow::Reconnect() {
+    SnapshotEditorControls();
+    // Reuse owned/attached rules. Never replace an incompatible listener and
+    // never clear an active form while restoring transport.
+    co_await core->Connect();
+    config = co_await core->Request(L"GET", L"/manager/config");
+    configRevision++;
+    connected = true;
+    co_await Poll();
+    Message(L"已重新連接本機服務。");
 }
 void MainWindow::ExitClicked(IInspectable const &, RoutedEventArgs const &) {
     Run([this] { return Exit(); });

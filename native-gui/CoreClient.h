@@ -1,11 +1,11 @@
 #pragma once
 #include "Json.h"
-#include <winrt/Windows.Web.Http.h>
-#include <winrt/Windows.Web.Http.Filters.h>
-#include <winrt/Windows.Web.Http.Headers.h>
 #include <filesystem>
 #include <fstream>
 #include <shellapi.h>
+#include <winrt/Windows.Web.Http.Filters.h>
+#include <winrt/Windows.Web.Http.Headers.h>
+#include <winrt/Windows.Web.Http.h>
 namespace amiebl {
 // HTTP continuations are asynchronous; mutation requests are never retried.
 struct CoreClient {
@@ -23,6 +23,7 @@ struct CoreClient {
     winrt::Windows::Foundation::IAsyncAction Shutdown();
     bool OwnedExited() const;
     static std::wstring Option(std::wstring const &name);
+    static bool HasFlag(std::wstring const &name);
 
   private:
     winrt::Windows::Foundation::IAsyncOperation<bool> Compatible();

@@ -1,7 +1,7 @@
 #include "pch.h"
 #include "CoreClient.h"
-#include <winrt/Windows.Storage.Streams.h>
 #include <chrono>
+#include <winrt/Windows.Storage.Streams.h>
 namespace amiebl {
 using namespace winrt;
 using namespace Windows::Web::Http;
@@ -19,6 +19,18 @@ std::wstring CoreClient::Option(std::wstring const &name) {
         LocalFree(argv);
     }
     return result;
+}
+bool CoreClient::HasFlag(std::wstring const &name) {
+    int count = 0;
+    auto argv = CommandLineToArgvW(GetCommandLineW(), &count);
+    bool found = false;
+    if (argv) {
+        for (int i = 1; i < count; i++)
+            if (argv[i] == name)
+                found = true;
+        LocalFree(argv);
+    }
+    return found;
 }
 CoreClient::CoreClient() {
     auto filter = Windows::Web::Http::Filters::HttpBaseProtocolFilter();
@@ -68,9 +80,8 @@ IAsyncOperation<bool> CoreClient::Compatible() {
     if (!response.IsSuccessStatusCode() || str(health, L"app") != L"local-model-manager" ||
         !response.Headers().HasKey(L"X-AMIEBL-Core-Protocol") ||
         response.Headers().Lookup(L"X-AMIEBL-Core-Protocol") != L"1")
-        throw hresult_error(
-            E_FAIL,
-            L"連接埠上的服務與此 GUI 不相容（需要 AMIEBL Core 協定 1）。未停止或修改該服務。");
+        throw hresult_error(E_FAIL, L"連接埠上的服務與此 GUI 不相容（需要 AMIEBL "
+                                    L"Core 協定 1）。未停止或修改該服務。");
     co_return true;
 }
 IAsyncAction CoreClient::Connect() {
@@ -87,7 +98,8 @@ IAsyncAction CoreClient::Connect() {
         if (!std::filesystem::is_regular_file(exe))
             throw hresult_error(E_FAIL, L"找不到 amiebl-core.exe；請指定 --core 原生服務路徑。");
         std::filesystem::create_directories(dataDir);
-        // Paths cannot contain quotes on Windows; quote each argument, never invoke a shell.
+        // Paths cannot contain quotes on Windows; quote each argument, never invoke
+        // a shell.
         std::wstring command = L"\"" + exe + L"\" --experimental-runtime --data-dir \"" +
                                dataDir.wstring() + L"\" --port " + std::to_wstring(port);
         auto enginePort = Option(L"--engine-port");

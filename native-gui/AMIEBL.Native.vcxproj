@@ -65,7 +65,7 @@
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
-      <AdditionalDependencies>shell32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>shell32.lib;advapi32.lib;ole32.lib;bcrypt.lib;comctl32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
@@ -85,12 +85,20 @@
     <ClCompile Include="MainWindow.xaml.cpp" />
     <ClCompile Include="CoreClient.cpp" />
     <ClCompile Include="MainWindow.Pages.cpp" />
+    <ClCompile Include="MainWindow.Editors.cpp" />
+    <ClCompile Include="MainWindow.EditorActions.cpp" />
+    <ClCompile Include="EditorSchemas.cpp" />
+    <ClCompile Include="WindowsLifecycle.cpp" />
     <ClCompile Include="MainWindow.Acceptance.cpp" />
+    <ClCompile Include="MainWindow.EditorAcceptance.cpp" />
+    <ClCompile Include="MainWindow.LifecycleAcceptance.cpp" />
     <ClCompile Include="$(GeneratedFilesDir)module.g.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="pch.h" />
     <ClInclude Include="Json.h" />
+    <ClInclude Include="EditorState.h" />
+    <ClInclude Include="WindowsLifecycle.h" />
     <ClInclude Include="CoreClient.h" />
     <ClInclude Include="SmoothExpander.h" />
     <ClInclude Include="UiAwait.h" />

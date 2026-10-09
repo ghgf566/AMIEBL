@@ -80,6 +80,74 @@ class NativeGuiIntegration(native.NativeRuntimeIntegration):
         self.assertIsNone(self.proc.poll())
         self.assertTrue(self.get("/health")["ok"])
 
+    def test_native_editors_save_conflict_and_dirty_navigation(self):
+        before = self.get("/manager/config")
+        self.gui = subprocess.Popen(
+            [str(GUI), "--data-dir", str(self.data), "--port", str(self.port),
+             "--core", str(native.CORE), "--editor-test", "1"],
+            env=self.env, cwd=ROOT, creationflags=subprocess.CREATE_NO_WINDOW)
+        self.gui.wait(timeout=90)
+        self.assertEqual(self.gui.returncode, 0)
+        result = self.result()
+        self.assertTrue(result["ok"], result)
+        for key in ("editor_fields", "dynamic_fields", "dirty_navigation", "conflict_preserved",
+                    "unknown_fields_preserved", "optional_sampling", "profile_array_save",
+                    "system_save", "profile_add_duplicate"):
+            self.assertTrue(result[key], result)
+        self.assertFalse(result["ui_parity_verified"])
+        self.assertEqual(self.get("/manager/config"), before)
+        self.assertIsNone(self.proc.poll())
+        self.assertEqual(self.events(), [])
+        for name in ("模型庫", "使用模式", "系統"):
+            self.assertGreater((self.data / (name + ".png")).stat().st_size, 1000)
+
+    def test_native_tray_close_single_instance_and_core_recovery(self):
+        import ctypes
+        user32 = ctypes.WinDLL("user32", use_last_error=True)
+        user32.IsWindowVisible.argtypes = [ctypes.c_void_p]
+        user32.IsWindowVisible.restype = ctypes.c_int
+        user32.PostMessageW.argtypes = [ctypes.c_void_p, ctypes.c_uint, ctypes.c_size_t, ctypes.c_ssize_t]
+        user32.PostMessageW.restype = ctypes.c_int
+        config = self.get("/manager/config")
+        config.update(close_to_tray=True, start_hidden=True)
+        self.assertEqual(self.api("PUT", "/manager/config", json=config).status_code, 200)
+        command = [str(GUI), "--data-dir", str(self.data), "--port", str(self.port),
+                   "--core", str(native.CORE), "--lifecycle-test", "1"]
+        self.gui = subprocess.Popen(command, env=self.env, cwd=ROOT, creationflags=subprocess.CREATE_NO_WINDOW)
+        ready = self.data / "lifecycle-ready.json"
+        native.reference.eventually(lambda: ready.exists() or self.gui.poll() is not None, 30)
+        self.assertIsNone(self.gui.poll(), self.result() if (self.data / "gui-e2e.json").exists() else "GUI exited")
+        observed = json.loads(ready.read_text(encoding="utf-8"))
+        self.assertTrue(observed["hidden_start"])
+        hwnd = observed["hwnd"]
+        self.assertTrue(user32.PostMessageW(hwnd, 0x0010, 0, 0))  # WM_CLOSE, real window handler
+        native.reference.eventually(lambda: not user32.IsWindowVisible(hwnd), 10)
+        (self.data / "lifecycle-hidden.txt").write_text("ready", encoding="utf-8")
+        native.reference.eventually(lambda: (self.data / "lifecycle-hidden-confirmed.txt").exists(), 10)
+        secondary = subprocess.Popen(command, env=self.env, cwd=ROOT, creationflags=subprocess.CREATE_NO_WINDOW)
+        try:
+            secondary.wait(timeout=20)
+            self.assertEqual(secondary.returncode, 0)
+        finally:
+            if secondary.poll() is None:
+                secondary.terminate()
+                secondary.wait(timeout=10)
+        native.reference.eventually(lambda: (self.data / "lifecycle-revealed.txt").exists(), 10)
+        self.assertTrue(user32.IsWindowVisible(hwnd))
+        self.assertIsNone(self.proc.poll())  # second GUI must not stop the attached Core
+        self.assertEqual(self.api("POST", "/manager/shutdown", json={}).status_code, 200)
+        self.proc.wait(timeout=10)
+        (self.data / "lifecycle-core-stopped.txt").write_text("ready", encoding="utf-8")
+        self.gui.wait(timeout=40)
+        result = self.result()
+        self.assertTrue(result["ok"], result)
+        for key in ("tray_registered", "close_to_background", "single_instance_reveal",
+                    "reconnect_preserved_draft", "owned_recovery"):
+            self.assertTrue(result[key], result)
+        with self.assertRaises(Exception):
+            self.client.get("/health")
+        self.assertEqual(self.events(), [])
+
     def exercise_controls(self, owned):
         self.launch_gui()
 

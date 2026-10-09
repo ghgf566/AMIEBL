@@ -4,6 +4,18 @@
 >
 > Source of truth: **v1.0.0 tagged commit `eab5dc1451bf38d1c008558ba8d49c85954c04bb`**. Keep the tag and `main` untouched until native parity is proven. If sources disagree, verify actual v1.0.0 application behavior rather than silently changing it.
 
+## Phase-priority amendment — explicit user decision, 2026-10-09
+
+Complete the language migration and existing feature/UI parity first. New online
+engine download, CPU/CUDA installer selection, version switching, update,
+rollback and independent uninstall UI are deferred to a later independent
+project. They must not block acceptance of this language-migration phase.
+Existing manual engine_dir and all existing inference options remain mandatory.
+The engine-manager sections below retain the long-term target; their new-feature
+requirements are deferred, not satisfied. Hardware/clean-machine and complete
+visual acceptance remain unverified until actually performed. No release is
+implied by the phase-priority amendment.
+
 ## Non-negotiable acceptance rule
 
 **Implementation languages may change; externally observable behavior must not change.** The native rewrite MUST retain every existing functional behavior, setting, shortcut, layout, animation, persistence semantic, error response, window/tray behavior, installation/uninstallation guarantee, and public API behavior. Do not trade a missing feature for a simpler implementation. An unverified or partly implemented replacement **must not be shipped as v1.1.0**.

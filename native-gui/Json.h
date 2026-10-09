@@ -1,8 +1,8 @@
 #pragma once
-#include <winrt/Windows.Data.Json.h>
 #include <cmath>
-#include <sstream>
 #include <iomanip>
+#include <sstream>
+#include <winrt/Windows.Data.Json.h>
 namespace amiebl {
 using namespace winrt;
 using namespace Windows::Data::Json;
@@ -37,6 +37,17 @@ inline JsonObject entity(JsonObject const &o, hstring const &collection, hstring
         if (v.ValueType() == JsonValueType::Object && str(v.GetObject(), L"id") == id)
             return v.GetObject();
     return JsonObject();
+}
+inline void replace_entity(JsonObject const &o, hstring const &collection,
+                           JsonObject const &replacement) {
+    auto rows = array(o, collection);
+    for (uint32_t i = 0; i < rows.Size(); i++)
+        if (str(rows.GetAt(i).GetObject(), L"id") == str(replacement, L"id")) {
+            rows.SetAt(i, replacement);
+            o.SetNamedValue(collection, rows);
+            return;
+        }
+    throw winrt::hresult_error(E_FAIL, L"此項目已被移除，請重新整理。");
 }
 inline hstring metric(JsonObject const &o, hstring const &k, hstring const &suffix = L"",
                       hstring const &format = L"0.0") {

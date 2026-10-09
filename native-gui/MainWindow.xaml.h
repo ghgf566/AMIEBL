@@ -1,7 +1,9 @@
 #pragma once
-#include "MainWindow.g.h"
 #include "CoreClient.h"
+#include "EditorState.h"
+#include "MainWindow.g.h"
 #include "SmoothExpander.h"
+#include "WindowsLifecycle.h"
 namespace winrt::AMIEBL::Native::implementation {
 struct MainWindow : MainWindowT<MainWindow> {
     MainWindow();
@@ -13,6 +15,11 @@ struct MainWindow : MainWindowT<MainWindow> {
 
   private:
     std::shared_ptr<amiebl::CoreClient> core;
+    std::unique_ptr<amiebl::WindowsLifecycle> lifecycle;
+    void Reveal();
+    unsigned revealCount = 0;
+    Windows::Foundation::IAsyncAction LifecycleAcceptance();
+    Windows::Foundation::IAsyncAction Reconnect();
     Windows::Data::Json::JsonObject config, status;
     Windows::Data::Json::JsonArray requests;
     Microsoft::UI::Xaml::DispatcherTimer timer;
@@ -25,13 +32,31 @@ struct MainWindow : MainWindowT<MainWindow> {
     Microsoft::UI::Xaml::Controls::ContentControl taskDetail{nullptr};
     Microsoft::UI::Xaml::Controls::TextBox logBox{nullptr};
     std::shared_ptr<amiebl::SmoothExpander> serviceLogExpander;
+    std::shared_ptr<amiebl::EditorDraft> editor;
+    Microsoft::UI::Xaml::Controls::ListView entityList{nullptr};
+    Microsoft::UI::Xaml::Controls::ContentControl entityEditor{nullptr};
+    Microsoft::UI::Xaml::Controls::ScrollViewer editorScroll{nullptr};
+    std::map<hstring, Microsoft::UI::Xaml::Controls::Control> inputs;
+    std::map<hstring, Microsoft::UI::Xaml::FrameworkElement> fieldBlocks;
+    std::map<hstring, Microsoft::UI::Xaml::Controls::Slider> sliders;
+    std::vector<std::shared_ptr<amiebl::SmoothExpander>> editorExpanders;
+    std::shared_ptr<amiebl::SmoothExpander> modelLocations;
+    hstring selectedModel, selectedProfile, entitySearch;
+    std::map<hstring, hstring> initialFieldText, initialControlText;
+    bool syncingFields = false;
     hstring page = L"總覽", selectedTask, logs;
     bool working = false, polling = false, exiting = false, selecting = false, connected = false,
          indicatorInitialized = false;
     using ActionTask = std::function<Windows::Foundation::IAsyncAction()>;
+    std::vector<winrt::weak_ref<Microsoft::UI::Xaml::Input::ICommand>> commands;
+    uint64_t configRevision = 0;
+    Microsoft::UI::Xaml::Controls::TextBlock capabilityText{nullptr};
+    std::weak_ptr<amiebl::SmoothExpander> revealingEditor;
+    void RefreshCommands();
     fire_and_forget StartAsync();
     fire_and_forget PollTick();
     Windows::Foundation::IAsyncAction GuiAcceptance();
+    Windows::Foundation::IAsyncAction EditorAcceptance();
     Windows::Foundation::IAsyncAction Capture(hstring name);
     Windows::Foundation::IAsyncAction InvokeButton(hstring label);
     void TestResult(Windows::Data::Json::JsonObject const &result);
@@ -47,6 +72,36 @@ struct MainWindow : MainWindowT<MainWindow> {
     void Error(hstring message);
     void Message(hstring message);
     void ShowPage(hstring next);
+    void RestoreNavigation();
+    Windows::Foundation::IAsyncOperation<bool> LeaveEditor();
+    Windows::Foundation::IAsyncAction SaveEditor();
+    Windows::Foundation::IAsyncAction
+    SaveConfig(std::function<void(Windows::Data::Json::JsonObject const &)> edit);
+    Microsoft::UI::Xaml::UIElement BuildEntities(hstring collection);
+    Microsoft::UI::Xaml::UIElement BuildSystem();
+    Microsoft::UI::Xaml::UIElement BuildForm(std::shared_ptr<amiebl::EditorDraft> draft);
+    Microsoft::UI::Xaml::UIElement BuildModelLocations();
+    void PopulateEntities(hstring collection);
+    void RestoreEntitySelection(hstring collection);
+    void OpenEditor(hstring collection, hstring id);
+    void EditField(hstring key, hstring text);
+    void SnapshotEditorControls();
+    void UpdateDependencies();
+    hstring ModelCapability(hstring id);
+    Microsoft::UI::Xaml::Controls::Button DangerAction(hstring label, ActionTask action);
+    Windows::Foundation::IAsyncOperation<hstring> PickFile(hstring extension);
+    Windows::Foundation::IAsyncOperation<hstring> PickFolder();
+    Windows::Foundation::IAsyncAction AddModel();
+    Windows::Foundation::IAsyncAction AddModelPath(hstring path);
+    Windows::Foundation::IAsyncAction ScanModels();
+    Windows::Foundation::IAsyncAction AddProfile();
+    Windows::Foundation::IAsyncAction DuplicateProfile();
+    Windows::Foundation::IAsyncAction DeleteEntity();
+    Windows::Foundation::IAsyncAction SetModelLocation(hstring previous, hstring replacement);
+    Windows::Foundation::IAsyncAction CheckConnection();
+    Windows::Foundation::IAsyncAction Export();
+    Windows::Foundation::IAsyncAction Import();
+    void SetStartup(bool enabled);
     void UpdateFooter();
     void UpdateIndicator();
     Microsoft::UI::Xaml::UIElement BuildOverview();

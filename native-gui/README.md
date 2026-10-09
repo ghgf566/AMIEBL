@@ -6,10 +6,13 @@ The overview and tasks/history pages now construct real controls and communicate
 with the actual Rust service. Load/unload, pause/resume, keep-loaded saving,
 status polling and cancellation are connected. VS Code preview/confirmation/apply
 and log actions are wired, but have not received full interactive acceptance.
-The log expander ports the frozen 260 ms smoothstep layout animation, including
-reversal and reduced-motion handling. The three remaining page builders,
-editors, draft preservation, tray, close-to-background and single-instance
-behavior are still missing. This is not the replacement GUI.
+The model library, profile and system pages now use the frozen editor schemas
+and real Rust management endpoints. Drafts, changed-field merging, conflict
+handling, save/discard/cancel navigation, model/profile operations and native
+file pickers are implemented. The log and editor expanders port the frozen
+260 ms smoothstep animation. Tray, close-to-background, singleton reveal and
+Core recovery are implemented. This remains a development GUI pending complete
+visual, keyboard, accessibility and hardware acceptance.
 
 Development runs require `--data-dir <isolated-directory>` and optionally
 `--core <amiebl-core.exe> --port <port> --engine-port <port>`.
@@ -21,7 +24,8 @@ HTTP caching is disabled so polling observes current engine/task state.
 `tests/test_native_gui_integration.py` launches actual WinUI controls with the
 real Core and unchanged Fake Engine. It invokes automation peers, verifies
 load/unload and persisted toggles, confirms active SSE cancellation and slot
-release, tests expander reversal, and captures PNG evidence. This proves the
+release, tests expander reversal, editor merging/conflicts, navigation dialogs,
+profile duplication, singleton reveal and Core recovery, and captures PNG evidence. This proves the
 specified operations, not full visual/animation parity or real llama.cpp.
 Use `AMIEBL_REQUIRE_GUI_TESTS=1` to require the built GUI; use
 `AMIEBL_GUI_EVIDENCE_DIR` to retain sanitized test evidence.
@@ -37,3 +41,11 @@ Build output is isolated under ignored `build/native-gui/`. Project deployment
 follows Microsoft's [self-contained C++ WinUI sample](https://github.com/microsoft/WindowsAppSDK-Samples/tree/main/Samples/SelfContainedDeployment/cpp/cpp-winui-unpackaged).
 Baseline captures and full interaction/animation parity gates remain required
 before the old GUI is retired; the shell is not evidence those gates passed.
+
+`Build-Development.ps1 -OutputDirectory <new-directory>` builds an isolated
+development folder with the native GUI/Core and app-local Windows App SDK.
+It does not package an engine or replace the supported installation. Its
+startup Run value is isolated as `AMIEBL.Native.Development`; production
+registration migration and clean-machine VC runtime validation remain pending.
+The new Runtime Package Manager is deferred by the user's phase-priority
+decision; existing manual engine configuration remains required.

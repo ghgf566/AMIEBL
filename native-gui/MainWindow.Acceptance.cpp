@@ -1,6 +1,6 @@
 #include "pch.h"
-#include "UiAwait.h"
 #include "MainWindow.xaml.h"
+#include "UiAwait.h"
 #include <winrt/Microsoft.UI.Xaml.Automation.Peers.h>
 #include <winrt/Microsoft.UI.Xaml.Automation.Provider.h>
 #include <winrt/Microsoft.UI.Xaml.Media.Imaging.h>
@@ -33,6 +33,13 @@ void MainWindow::TestResult(JsonObject const &result) {
 IAsyncAction MainWindow::InvokeButton(hstring label) {
     Root().UpdateLayout();
     auto button = FindButton(Root(), label);
+    if (!button)
+        for (auto popup : Microsoft::UI::Xaml::Media::VisualTreeHelper::GetOpenPopupsForXamlRoot(
+                 Root().XamlRoot())) {
+            button = FindButton(popup.Child(), label);
+            if (button)
+                break;
+        }
     if (!button || !button.IsEnabled())
         throw hresult_error(E_FAIL, L"測試找不到可操作按鈕：" + label);
     auto peer = Microsoft::UI::Xaml::Automation::Peers::FrameworkElementAutomationPeer::
@@ -142,8 +149,7 @@ IAsyncAction MainWindow::GuiAcceptance() {
     bool reversing = serviceLogExpander->animating;
     serviceLogExpander->native.IsExpanded(false);
     if (animationEnabled && reversing)
-        check(std::abs(serviceLogExpander->from - intermediate) < 1,
-              L"展開反向操作產生高度跳動。");
+        check(std::abs(serviceLogExpander->from - intermediate) < 1, L"展開反向操作產生高度跳動。");
     else if (!animationEnabled)
         check(serviceLogExpander->Height() < 1 && !serviceLogExpander->animating,
               L"關閉系統動畫時未立即收合。");
@@ -186,7 +192,8 @@ IAsyncAction MainWindow::GuiAcceptance() {
     result.SetNamedValue(L"task_cancel_confirmed", JsonValue::CreateBooleanValue(true));
     result.SetNamedValue(L"scroll_preserved", JsonValue::CreateBooleanValue(true));
     result.SetNamedValue(L"animations_enabled", JsonValue::CreateBooleanValue(animationEnabled));
-    result.SetNamedValue(L"expander_reversal_checked", JsonValue::CreateBooleanValue(reversing && animationEnabled));
+    result.SetNamedValue(L"expander_reversal_checked",
+                         JsonValue::CreateBooleanValue(reversing && animationEnabled));
     result.SetNamedValue(L"protocol", JsonValue::CreateNumberValue(1));
     result.SetNamedValue(L"ui_parity_verified", JsonValue::CreateBooleanValue(false));
     TestResult(result);

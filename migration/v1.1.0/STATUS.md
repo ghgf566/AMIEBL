@@ -2,14 +2,81 @@
 
 **IN PROGRESS. Not release ready. PR #8 is Draft. No acceptance gate is waived.**
 
-Continued on 2026-10-09 from verified remote head
-`a3440cb089d26e49b9a4dfa6c8ca8908d7708e03`. No intervening agent commit
-was present. `main` and the commit behind `v1.0.0` remain
-`eab5dc1451bf38d1c008558ba8d49c85954c04bb`; neither is modified.
-[PARITY_CONTRACT.md](PARITY_CONTRACT.md), `CONTRACT.md`, and
-`DESKTOP-ARCHITECTURE.md` remain the governing requirements.
+## User priority decision (2026-10-09)
 
-## GUI/Core continuation from 7d98c3a (2026-10-09)
+The user explicitly changed phase priorities: finish Python -> Rust and C# ->
+C++/WinRT language migration, five-page GUI/Core integration and zero-regression
+acceptance first. A new llama.cpp/CUDA download/install/version/rollback UI and
+Runtime Package Manager are **deferred to a separate later project** and are
+not blockers for completion of this language-migration phase. Existing manual
+engine_dir, load/unload, GPU offload, Context, KV, MTP and Vision behavior must
+remain intact. Fake Engine/Windows GUI acceptance comes first; actual CPU/CUDA
+hardware acceptance remains a later user-machine gate, never assumed green.
+No main/tag/release change is authorized. PR #8 stays Draft.
+
+## Current editor/lifecycle continuation (after 2b4887d)
+
+### Implemented
+
+- Model library, profiles and system page builders replace the remaining empty
+  PageHost branches. The frozen 20/10/12 field schemas, labels, sections, help,
+  native controls, sliders, optional values and dependency predicates are ported.
+- Search/selection, GGUF/folder pickers, model scan/add/remove/default/load,
+  profile add/duplicate/delete, location management, connection diagnostics and
+  settings import/export are connected to the real Rust management endpoints.
+- Separate drafts preserve unknown fields. Saves GET latest, merge only changed
+  fields, reject same-field conflicts before PUT, publish normalized PUT values,
+  preserve drafts on failure and distinguish persistence from status refresh.
+  Navigation retains save/discard/cancel, and polling/reconnection retains drafts.
+- Win32 tray menu, close-to-background, SHA-256 data-directory singleton/reveal,
+  hidden startup and owned/attached Core recovery are implemented. Development
+  startup registration deliberately uses AMIEBL.Native.Development instead of
+  overwriting the supported v1.0.0 Run value; production key migration remains
+  an explicit packaging gate.
+- Native integration tests exercise actual controls, dialogs, window messages,
+  second-process startup and Core restart; no GUI or management API is mocked.
+- Build-Development.ps1 prepares isolated GUI/Core development artifacts without
+  Python/.NET or engine payloads. Another machine may still need the VC runtime;
+  this is not installer or clean-machine acceptance.
+
+### Tested
+
+- Release x64 C++/WinRT build and native window/resource startup pass locally.
+- Full Python/reference/native regression: **217 tests pass in 351.472 s**,
+  with both AMIEBL_REQUIRE_GUI_TESTS and AMIEBL_REQUIRE_NATIVE_TESTS enabled.
+  All five real native GUI integration cases pass; no reference assertions or
+  Fake Engine behavior were changed. The earlier reference port-rebind flake
+  did not recur in this run; this does not prove it cannot recur.
+- Desktop Core and Platform regression executables pass independently.
+- GUI cases exercise 20/10/12 editor fields, dependency states, optional values,
+  concurrent changed-field merge, same-field conflict, numeric validation,
+  unknown fields, save/discard/cancel navigation, profile tools/add/duplicate,
+  system persistence, close-to-background, second-process reveal, attached Core
+  protection, owned Core restart and retained drafts.
+- Sanitized three-page screenshots and lifecycle results are retained locally.
+  git diff --check passes. Packaging script parses; packaged execution and
+  new-commit CI results are recorded separately when available.
+
+### Confirmed equivalent (finite cases)
+
+The tested merge/conflict/unknown-field, optional sampling, tools-array,
+navigation decision and Core ownership cases preserve the frozen reference
+contract. Field schemas preserve the original keys, labels, help and predicates.
+These finite results do not prove complete product or visual equivalence.
+
+### Pending / unverified
+
+Complete matched-state pixel, DPI, accessibility, keyboard/focus, scrolling,
+picker/tray interaction, startup registration and hardware parity remain
+**unverified**. Full import/export/scan/removal/default-selection UI acceptance,
+all persistence/refresh failure permutations and editor animation timing need
+broader coverage. Production startup-key migration and clean-machine native
+dependency/installer acceptance remain pending. Native C++ CodeQL is newly
+enabled and awaits the pushed commit's workflow result.
+No milestone A-E or complete product equivalence is declared merely from a build.
+
+## Historical GUI/Core checkpoint at 2b4887d
+
 
 Remote branch and Draft PR were rechecked before work; no newer agent commit
 was present. Existing ten frozen-reference captures remain available in the
@@ -123,7 +190,7 @@ scenarios against Python and Rust: log history/stale/partial events, new-log
 rotation with queued work, slot handoff after cancellation and crash/reload.
 Original backend code, fake engine and test assertions remain unchanged.
 
-## Native GUI and visual baseline
+## Historical native shell checkpoint (before ed12cd7)
 
 `native-gui/AMIEBL.Native.vcxproj` is a real C++20/C++/WinRT WinUI 3 target
 with app-local Windows App SDK. Its MainWindow XAML is copied from v1.0.0
@@ -212,7 +279,7 @@ and native startup test at the implementation commit.
 3. Port the full five-page C++ GUI and all editor/animation/tray/Windows behavior
    against frozen screenshots and interaction measurements; retain C# until
    complete visual and end-to-end acceptance.
-4. Implement the separately versioned CPU/CUDA runtime package manager:
+4. **Deferred separate project per user decision:** separately versioned CPU/CUDA runtime package manager:
    trusted source, SHA-256, resumable download, atomic install, corrupt archives,
    rollback/offline use and external-engine/model path protection.
 5. Complete versioned GUI–Core negotiation, native Portable/Setup packaging,
