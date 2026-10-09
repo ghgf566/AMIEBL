@@ -40,6 +40,10 @@ jobs:
         run: cargo build --manifest-path native-core/Cargo.toml --bin vscode-probe
       - name: Compare Rust VS Code sync, Agents and backups with Python v1.0.0
         run: python -m unittest discover -s tests -p "test_native_vscode_parity.py" -v
+      - name: Compile native GGUF metadata probe
+        run: cargo build --manifest-path native-core/Cargo.toml --bin gguf-probe
+      - name: Compare Rust GGUF and reasoning against Python v1.0.0
+        run: python -m unittest discover -s tests -p "test_native_gguf_parity.py" -v
       - name: Check frozen reference route and navigation inventory
         run: python -m unittest discover -s tests -p "test_v11_baseline_inventory.py" -v
       - name: Execute the original regression test suite
