@@ -40,6 +40,10 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
       - name: Run native Rust core unit tests
         run: cargo test --manifest-path native-core/Cargo.toml
+      - name: Compile Rust configuration differential-test probe
+        run: cargo build --manifest-path native-core/Cargo.toml --bin config-probe
+      - name: Compare Rust config behavior with Python v1.0.0
+        run: python -m unittest discover -s tests -p "test_native_config_parity.py" -v
       - name: State release limitation
         shell: pwsh
         run: Write-Host 'REFERENCE TESTS ONLY. Rust HTTP parity, C++/WinRT GUI parity and clean Windows runtime installation are NOT YET verified.'
