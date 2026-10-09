@@ -14,7 +14,7 @@ import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
-PROBE = ROOT / "native-core" / "target" / "debug" / (
+PROBE = Path(os.environ.get("CARGO_TARGET_DIR", ROOT / "native-core/target")) / "debug" / (
     "gguf-probe.exe" if os.name == "nt" else "gguf-probe"
 )
 

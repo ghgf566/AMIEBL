@@ -17,7 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 import vscode_integration as legacy
 
 ROOT = Path(__file__).resolve().parents[1]
-PROBE = ROOT / "native-core" / "target" / "debug" / (
+PROBE = Path(os.environ.get("CARGO_TARGET_DIR", ROOT / "native-core/target")) / "debug" / (
     "vscode-probe.exe" if os.name == "nt" else "vscode-probe"
 )
 

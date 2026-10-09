@@ -49,3 +49,12 @@ startup Run value is isolated as `AMIEBL.Native.Development`; production
 registration migration and clean-machine VC runtime validation remain pending.
 The new Runtime Package Manager is deferred by the user's phase-priority
 decision; existing manual engine configuration remains required.
+
+For session-isolated workspaces, the development builder honors
+`CARGO_TARGET_DIR` (or `-RustTargetDirectory`) and optional
+`AMIEBL_NATIVE_OUTPUT_DIR`, `AMIEBL_NATIVE_INTERMEDIATE_DIR`, and
+`AMIEBL_NATIVE_RESTORE_DIR` (or the corresponding `-Native*Directory`
+parameters). Native integration/probe tests use the same target/output
+environment variables. With these unset, the original repository-local
+paths and GitHub Actions behavior are retained. No global environment
+changes are necessary.

@@ -17,7 +17,7 @@ import sys
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
-PROBE = ROOT / "native-core/target/debug" / ("request-probe.exe" if os.name == "nt" else "request-probe")
+PROBE = Path(os.environ.get("CARGO_TARGET_DIR", ROOT / "native-core/target")) / "debug" / ("request-probe.exe" if os.name == "nt" else "request-probe")
 spec = importlib.util.spec_from_file_location("amiebl_request_reference", ROOT / "backend/manager.py")
 legacy = importlib.util.module_from_spec(spec)
 sys.modules[spec.name] = legacy

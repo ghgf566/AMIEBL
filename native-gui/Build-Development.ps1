@@ -3,28 +3,37 @@ param(
     [string]$MSBuild = 'msbuild',
     [string]$VCTargetsDirectory,
     [string]$XamlCppTargets,
+    [string]$RustTargetDirectory = $env:CARGO_TARGET_DIR,
+    [string]$NativeOutputDirectory = $env:AMIEBL_NATIVE_OUTPUT_DIR,
+    [string]$NativeIntermediateDirectory = $env:AMIEBL_NATIVE_INTERMEDIATE_DIR,
+    [string]$NativeRestoreDirectory = $env:AMIEBL_NATIVE_RESTORE_DIR,
     [switch]$UseExistingCore
 )
 $ErrorActionPreference = 'Stop'
 $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
-$destination = [IO.Path]::GetFullPath($OutputDirectory)
+$destination = [IO.Path]::GetFullPath($OutputDirectory, (Get-Location).Path)
 if (Test-Path -LiteralPath $destination) { throw 'Choose a new output directory; existing files are never overwritten.' }
 Push-Location $repo
 try {
-    $core = Join-Path $repo 'native-core/target/release/amiebl-core.exe'
-    if ($UseExistingCore) { $core = Join-Path $repo 'native-core/target/debug/amiebl-core.exe' }
+    $rustTarget = if ($RustTargetDirectory) { [IO.Path]::GetFullPath($RustTargetDirectory, $repo) } else { Join-Path $repo 'native-core/target' }
+    $nativeOutput = if ($NativeOutputDirectory) { [IO.Path]::GetFullPath($NativeOutputDirectory, $repo) } else { Join-Path $repo 'build/native-gui/Release' }
+    $core = Join-Path $rustTarget 'release/amiebl-core.exe'
+    if ($UseExistingCore) { $core = Join-Path $rustTarget 'debug/amiebl-core.exe' }
     else {
-        & cargo build --locked --release --manifest-path native-core/Cargo.toml --bin amiebl-core
+        & cargo build --locked --release --manifest-path native-core/Cargo.toml --bin amiebl-core --target-dir $rustTarget
         if ($LASTEXITCODE -ne 0) { throw 'Rust build failed.' }
     }
     if (-not (Test-Path -LiteralPath $core)) { throw 'Native Core executable is missing.' }
     $buildArgs = @('native-gui/AMIEBL.Native.vcxproj','/restore','/p:Configuration=Release','/p:Platform=x64','/nologo','/verbosity:minimal')
     if ($VCTargetsDirectory) { $buildArgs += "/p:VCTargetsPath=$([IO.Path]::GetFullPath($VCTargetsDirectory))\" }
     if ($XamlCppTargets) { $buildArgs += "/p:_CppCommonExtensionTargets=$([IO.Path]::GetFullPath($XamlCppTargets))" }
+    if ($NativeOutputDirectory) { $buildArgs += "/p:OutDir=$nativeOutput\" }
+    if ($NativeIntermediateDirectory) { $buildArgs += "/p:IntDir=$([IO.Path]::GetFullPath($NativeIntermediateDirectory, $repo))\" }
+    if ($NativeRestoreDirectory) { $buildArgs += "/p:MSBuildProjectExtensionsPath=$([IO.Path]::GetFullPath($NativeRestoreDirectory, $repo))\" }
     & $MSBuild @buildArgs
     if ($LASTEXITCODE -ne 0) { throw 'Native GUI build failed.' }
     New-Item -ItemType Directory -Path $destination | Out-Null
-    Get-ChildItem -LiteralPath (Join-Path $repo 'build/native-gui/Release') |
+    Get-ChildItem -LiteralPath $nativeOutput |
         Where-Object { $_.Extension -notin @('.pdb','.lib','.exp','.ilk') } |
         Copy-Item -Destination $destination -Recurse
     Copy-Item -LiteralPath $core -Destination (Join-Path $destination 'amiebl-core.exe')

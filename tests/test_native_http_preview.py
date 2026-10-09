@@ -17,7 +17,7 @@ import urllib.error
 import urllib.request
 
 ROOT=Path(__file__).resolve().parents[1]
-SERVER=ROOT/"native-core"/"target"/"debug"/(
+SERVER=Path(os.environ.get("CARGO_TARGET_DIR", ROOT / "native-core/target")) / "debug"/(
     "amiebl-core-preview.exe" if os.name=="nt" else "amiebl-core-preview"
 )
 

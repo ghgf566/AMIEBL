@@ -19,7 +19,7 @@ import unittest
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
-PROBE = ROOT / "native-core" / "target" / "debug" / ("config-probe.exe" if os.name == "nt" else "config-probe")
+PROBE = Path(os.environ.get("CARGO_TARGET_DIR", ROOT / "native-core/target")) / "debug" / ("config-probe.exe" if os.name == "nt" else "config-probe")
 
 spec = importlib.util.spec_from_file_location("amiebl_legacy_config_reference", ROOT / "backend" / "manager.py")
 legacy = importlib.util.module_from_spec(spec)

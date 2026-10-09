@@ -12,7 +12,7 @@ import unittest
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
-CORE = ROOT / "native-core/target/debug" / ("amiebl-core.exe" if os.name == "nt" else "amiebl-core")
+CORE = Path(os.environ.get("CARGO_TARGET_DIR", ROOT / "native-core/target")) / "debug" / ("amiebl-core.exe" if os.name == "nt" else "amiebl-core")
 spec = importlib.util.spec_from_file_location("native_runtime_reference_tests", ROOT / "tests/test_manager_integration.py")
 reference = importlib.util.module_from_spec(spec)
 sys.modules[spec.name] = reference

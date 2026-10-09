@@ -18,7 +18,7 @@ spec = importlib.util.spec_from_file_location("gui_native_runtime_fixture", ROOT
 native = importlib.util.module_from_spec(spec)
 sys.modules[spec.name] = native
 spec.loader.exec_module(native)
-GUI = ROOT / "build/native-gui/Release/AMIEBL.Native.exe"
+GUI = Path(os.environ.get("AMIEBL_NATIVE_OUTPUT_DIR", ROOT / "build/native-gui/Release")) / "AMIEBL.Native.exe"
 
 
 class NativeGuiIntegration(native.NativeRuntimeIntegration):
