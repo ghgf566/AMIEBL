@@ -5,3 +5,5 @@
 //! passes. The legacy application remains the working oracle.
 
 pub mod config;
+
+pub mod vscode;
