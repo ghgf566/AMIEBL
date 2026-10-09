@@ -28,14 +28,6 @@ jobs:
           dotnet-version: '10.0.x'
       - name: Install reference API test dependencies
         run: python -m pip install -r backend/requirements.txt
-      - name: Check frozen reference route and navigation inventory
-        run: python -m unittest discover -s tests -p "test_v11_baseline_inventory.py" -v
-      - name: Execute the original regression test suite
-        run: python -m unittest discover -s tests -p "test_*.py" -v
-      - name: Verify editor state, drafts and typed UI settings
-        run: dotnet run --project tests/DesktopCoreRegression -c Release
-      - name: Verify desktop process and data handling
-        run: dotnet run --project tests/DesktopPlatformRegression -c Release
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
       - name: Run native Rust core unit tests
@@ -44,6 +36,14 @@ jobs:
         run: cargo build --manifest-path native-core/Cargo.toml --bin config-probe
       - name: Compare Rust config behavior with Python v1.0.0
         run: python -m unittest discover -s tests -p "test_native_config_parity.py" -v
+      - name: Check frozen reference route and navigation inventory
+        run: python -m unittest discover -s tests -p "test_v11_baseline_inventory.py" -v
+      - name: Execute the original regression test suite
+        run: python -m unittest discover -s tests -p "test_*.py" -v
+      - name: Verify editor state, drafts and typed UI settings
+        run: dotnet run --project tests/DesktopCoreRegression -c Release
+      - name: Verify desktop process and data handling
+        run: dotnet run --project tests/DesktopPlatformRegression -c Release
       - name: State release limitation
         shell: pwsh
         run: Write-Host 'REFERENCE TESTS ONLY. Rust HTTP parity, C++/WinRT GUI parity and clean Windows runtime installation are NOT YET verified.'
