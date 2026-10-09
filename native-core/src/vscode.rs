@@ -226,9 +226,11 @@ pub fn preserve_agent_profile_marker(source: &str, profile_id: &str, name: Optio
         content = sync_agent_name(&content, name)?;
     }
     let marker = format!("AMIEBL_PROFILE:{profile_id}");
-    let old = regexp(r"(?mi)^[ \t]*AMIEBL_PROFILE\s*:\s*[A-Za-z0-9_-]+[ \t]*\r?$");
+    let old = regexp(r"(?mi)^[ \t]*AMIEBL_PROFILE[ \t]*:[ \t]*[A-Za-z0-9_-]+[ \t]*(?P<cr>\r?)$");
     if old.is_match(&content) {
-        return Ok(old.replace(&content, marker.as_str()).to_string());
+        return Ok(old.replace(&content, |caps: &regex::Captures| {
+            format!("{}{}", marker, caps.name("cr").map(|v| v.as_str()).unwrap_or(""))
+        }).to_string());
     }
     let (_, delim_end) = yaml_header(&content)
         .ok_or("既有 VS Code Agent 缺少有效 YAML 標頭；為避免覆蓋手動設定，已停止同步。")?;
@@ -407,7 +409,7 @@ mod tests {
     fn jsonc_comments_preserve_quoted_url_credentials_and_trailing_comma() {
         let val = read_jsonc("[/*comment*/{\"url\":\"http://localhost\", \"secret\":\"a/*b*/,]\\\"\",},]").unwrap();
         assert_eq!(val[0]["url"],"http://localhost");
-        assert_eq!(val[0]["secret"],"a/*b/],\""); 
+        assert_eq!(val[0]["secret"],"a/*b/,]\""); 
         assert!(read_jsonc("[ /* unterminated ").is_err());
     }
 
