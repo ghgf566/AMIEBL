@@ -409,7 +409,7 @@ mod tests {
     fn jsonc_comments_preserve_quoted_url_credentials_and_trailing_comma() {
         let val = read_jsonc("[/*comment*/{\"url\":\"http://localhost\", \"secret\":\"a/*b*/,]\\\"\",},]").unwrap();
         assert_eq!(val[0]["url"],"http://localhost");
-        assert_eq!(val[0]["secret"],"a/*b/,]\""); 
+        assert_eq!(val[0]["secret"],"a/*b*/,]\""); 
         assert!(read_jsonc("[ /* unterminated ").is_err());
     }
 
