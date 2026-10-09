@@ -1,4 +1,7 @@
 #pragma once
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <windows.h>
 #include <unknwn.h>
 #undef GetCurrentTime
@@ -12,5 +15,16 @@
 #include <winrt/Microsoft.UI.Xaml.Markup.h>
 #include <winrt/Microsoft.UI.Xaml.Input.h>
 #include <winrt/Microsoft.UI.Xaml.Shapes.h>
+#include <winrt/Microsoft.UI.Xaml.Hosting.h>
+#include <winrt/Microsoft.UI.Composition.h>
+#include <winrt/Microsoft.UI.Windowing.h>
+#include <winrt/Windows.UI.ViewManagement.h>
+#include <winrt/Windows.Graphics.h>
+#include <winrt/Windows.ApplicationModel.DataTransfer.h>
+#include <functional>
+#include <memory>
+#include <map>
+#include <vector>
+#include <algorithm>
 #include <winrt/Microsoft.UI.Dispatching.h>
 #include "MainWindow.xaml.h"

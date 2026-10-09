@@ -65,6 +65,7 @@
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
+      <AdditionalDependencies>shell32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
@@ -82,10 +83,17 @@
     </ClCompile>
     <ClCompile Include="App.xaml.cpp" />
     <ClCompile Include="MainWindow.xaml.cpp" />
+    <ClCompile Include="CoreClient.cpp" />
+    <ClCompile Include="MainWindow.Pages.cpp" />
+    <ClCompile Include="MainWindow.Acceptance.cpp" />
     <ClCompile Include="$(GeneratedFilesDir)module.g.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="pch.h" />
+    <ClInclude Include="Json.h" />
+    <ClInclude Include="CoreClient.h" />
+    <ClInclude Include="SmoothExpander.h" />
+    <ClInclude Include="UiAwait.h" />
     <ClInclude Include="App.xaml.h">
       <DependentUpon>App.xaml</DependentUpon>
     </ClInclude>

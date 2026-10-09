@@ -20,6 +20,14 @@ spec.loader.exec_module(reference)
 
 
 class NativeRuntimeIntegration(reference.ManagerIntegration):
+    def test_native_gui_protocol_is_additive_and_health_shape_stays_compatible(self):
+        response = self.client.get("/health")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers["X-AMIEBL-Core-Protocol"], "1")
+        self.assertEqual(set(response.json()), {"ok", "app", "version"})
+        self.assertTrue(response.json()["ok"])
+        self.assertEqual(response.json()["app"], "local-model-manager")
+
     def setUp(self):
         if not CORE.is_file():
             if os.environ.get("AMIEBL_REQUIRE_NATIVE_TESTS") == "1":

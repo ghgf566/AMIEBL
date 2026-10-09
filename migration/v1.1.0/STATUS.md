@@ -9,6 +9,45 @@ was present. `main` and the commit behind `v1.0.0` remain
 [PARITY_CONTRACT.md](PARITY_CONTRACT.md), `CONTRACT.md`, and
 `DESKTOP-ARCHITECTURE.md` remain the governing requirements.
 
+## GUI/Core continuation from 7d98c3a (2026-10-09)
+
+Remote branch and Draft PR were rechecked before work; no newer agent commit
+was present. Existing ten frozen-reference captures remain available in the
+local acceptance output. No main/tag/release change is authorized or made.
+
+- Real native overview and tasks/history controls replace those two empty
+  pages. Core transport, management-token authentication, protocol-1 health
+  header, owned process Job and attached-service protection are implemented.
+- Load/unload, pause/resume, persisted keep-loaded toggle, task list/detail,
+  active SSE cancellation with upstream DELETE and confirmed slot release are
+  exercised through actual WinUI automation peers and the real Rust service.
+- Fixed confirmed Windows HTTP caching defect that returned stale unloaded
+  state after a successful engine load; both cache read/write are disabled.
+- Service log SmoothExpander uses the original 260 ms smoothstep layout
+  animation and SDK header style. Tests verify mid-animation reversal without
+  a height discontinuity and completed expansion/collapse. They do not prove
+  full visual, accessibility, timing-frame or all-DPI equivalence.
+- Added Windows CI GUI/Core integration plus sanitized screenshot/test artifact
+  upload. Existing Python/C# baseline and production deployment are retained.
+
+Local continuation evidence: Release x64 native build and window startup pass;
+Rust formatting/clippy pass; all 19 Rust unit tests pass; Desktop Core and
+Platform regression pass. GUI owned/attached operations pass. Full regression
+ran 213 tests: 212 passed, one unchanged Python reference reload scenario
+returned 502 because its owned engine port had not become reusable on Windows.
+The unchanged case passes on isolated rerun; its Rust counterpart passes in
+the full run. This is retained as an unresolved reference port-rebind flake,
+not hidden or interpreted as a full-green run. Windows CI will independently
+reproduce the expanded suite and RustSec check on the pushed commit.
+
+**Not complete:** models/profiles/system page builders, all editors and dirty
+state, tray/background close, single instance, complete reconnection/timeouts,
+all DPI/keyboard/manual visual acceptance, real CPU/CUDA inference, independent
+runtime package manager and native installer/clean-machine acceptance. Wired
+VS Code/dialog/log actions still require broader interactive verification.
+Only tested overview/task operations are accepted at this stage; no complete
+milestone A/B/C or product parity claim is made.
+
 ## Actual runtime milestone
 
 The new `native-core/src/runtime.rs`, `runtime/watch.rs` and

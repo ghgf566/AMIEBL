@@ -39,3 +39,11 @@ These scenarios are finite coverage, not proof of every v1.0.0 behavior.
 Formatting and strict Clippy now cover the whole native crate. Most edits to
 earlier modules in this milestone are mechanical rustfmt changes; the storage
 runtime-persistence method and the new runtime are the functional additions.
+
+## Native GUI protocol handshake
+
+The experimental runtime adds `X-AMIEBL-Core-Protocol: 1` to `/health`.
+The original JSON response keys and public API behavior remain unchanged.
+The native development GUI checks this header before authenticated attachment;
+it does not stop an incompatible service or an attached compatible service.
+This is an additive development handshake, not a production compatibility gate.

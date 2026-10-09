@@ -1939,7 +1939,10 @@ pub fn router(manager: Arc<Manager>) -> Router {
         .route(
             "/health",
             get(|| async {
-                Json(json!({"ok":true,"app":"local-model-manager","version":"1.1.0-dev"}))
+                (
+                    [("X-AMIEBL-Core-Protocol", "1")],
+                    Json(json!({"ok":true,"app":"local-model-manager","version":"1.1.0-dev"})),
+                )
             }),
         )
         .route("/manager/config", get(config).put(save))
