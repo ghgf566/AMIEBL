@@ -11,3 +11,6 @@ path = "src/lib.rs"
 
 [dependencies]
 serde_json = "1.0"
+regex = "1.12"
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+tempfile = "3.23"
