@@ -1,5 +1,10 @@
 ## Latest engine-management continuation (2026-10-10)
 
+VS Code background-model compatibility acceptance is tracked in
+[RELEASE-READINESS.md](RELEASE-READINESS.md), with configuration guidance in
+[VSCODE-UTILITY.md](../../native-core/VSCODE-UTILITY.md). This remains v1.1.0
+compatibility work and does not remove single-slot or cancellation safeguards.
+
 The user subsequently brought engine management into the 1.1.0 scope. The older
 priority decision below is historical. Managed Windows llama.cpp packages,
 Stable/Preview channels, hardware recommendations, safe installation, updates,

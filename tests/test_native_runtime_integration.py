@@ -1,8 +1,7 @@
-"""Run the unchanged v1.0.0 HTTP/fake-engine assertions against the real Rust service.
-
-Only the manager launch command changes. Fixtures, engine, request payloads,
-assertions and cleanup remain shared with test_manager_integration.py.
+"""Run shared v1.0.0 HTTP fixtures against Rust, with approved native contracts
+and additional background-request regressions. The frozen reference stays intact.
 """
+import concurrent.futures
 import importlib.util
 import os
 from pathlib import Path
@@ -20,6 +19,61 @@ spec.loader.exec_module(reference)
 
 
 class NativeRuntimeIntegration(reference.ManagerIntegration):
+    def test_background_burst_keeps_bounded_queue_and_cancellation(self):
+        self.load()
+        with concurrent.futures.ThreadPoolExecutor(max_workers=32) as pool:
+            active = pool.submit(self.completion, "FAKE_PREHEADER active")
+            reference.eventually(lambda: bool(self.events("post")))
+            waiting = [pool.submit(self.completion, "background title") for _ in range(31)]
+            reference.eventually(lambda: self.get("/manager/status")["queued_count"] == 31)
+            rejected = self.completion("one more utility request")
+            self.assertEqual(rejected.status_code, 429, rejected.text)
+            self.assertEqual(len(self.records()), 32)
+            for record in self.records():
+                if record["phase"] == "queued":
+                    response = self.api("POST", f"/manager/requests/{record['id']}/cancel", json={})
+                    self.assertEqual(response.status_code, 200, response.text)
+            for job in waiting:
+                job.result(timeout=10)
+            active.result(timeout=15)
+        self.assertEqual(len(self.events("post")), 1)
+        self.assertEqual(len(self.events("start")), 1)
+        self.assertEqual(self.get("/manager/status")["queued_count"], 0)
+
+    def test_first_agent_title_and_summary_share_loaded_single_slot(self):
+        self.auto_profile()
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+            first = pool.submit(self.completion, "hello", True)
+            reference.eventually(lambda: self.get("/manager/status")["active_count"] == 1)
+            title = pool.submit(self.client.post, "/v1/chat/completions", json={
+                "model": "test-model", "stream": False,
+                "messages": [
+                    {"role": "system", "content": "You are an expert in crafting ultra-compact titles for chatbot conversations. You are presented with a chat request, and you reply with only a brief title that captures the main topic of that request."},
+                    {"role": "user", "content": "Please write a brief title for the following request:\n\nAnalyze Rust architecture and debug a race condition"},
+                ],
+            })
+            reference.eventually(lambda: self.get("/manager/status")["queued_count"] == 1)
+            self.assertEqual(first.result(timeout=20).status_code, 200)
+            self.assertEqual(title.result(timeout=20).status_code, 200)
+        summary = self.client.post("/v1/chat/completions", json={
+            "model": "test-model", "stream": False,
+            "messages": [
+                {"role": "system", "content": "Return <summary> text"},
+                {"role": "user", "content": "Summarize the conversation history so far, paying special attention to the most recent agent commands and tool results that triggered this summarization. Structure your summary using the enhanced format provided in the system message."},
+            ],
+        })
+        self.assertEqual(summary.status_code, 200, summary.text)
+        self.assertEqual(len(self.events("start")), 1)
+        self.assertEqual(len(self.events("post")), 3)
+        self.assertFalse(self.events("post")[1]["body"]["chat_template_kwargs"]["enable_thinking"])
+        self.assertFalse(self.events("post")[-1]["body"]["chat_template_kwargs"]["enable_thinking"])
+        records = reference.eventually(lambda: self.records() if len(self.records()) == 3 and all(r["phase"] == "completed" for r in self.records()) else None)
+        self.assertEqual(len(records), 3)
+        self.assertIn("Copilot 對話標題", [r["request_kind"] for r in records])
+        starts = self.events("start")
+        slot_index = starts[0]["argv"].index("-np")
+        self.assertEqual(starts[0]["argv"][slot_index + 1], "1")
+
     def test_native_gui_protocol_is_additive_and_health_shape_stays_compatible(self):
         response = self.client.get("/health")
         self.assertEqual(response.status_code, 200)
