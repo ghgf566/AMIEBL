@@ -624,7 +624,10 @@ mod allocation_tests {
             ]});
             assert!(!classify(&body, &mut record), "{prefix}");
             assert_eq!(record["request_kind"], "Copilot 對話標題");
-            assert_eq!(record["decision"], "自動判斷：Copilot 對話標題；關閉思考：已辨識官方標題生成提示格式");
+            assert_eq!(
+                record["decision"],
+                "自動判斷：Copilot 對話標題；關閉思考：已辨識官方標題生成提示格式"
+            );
         }
         // Requiring BOTH roles avoids disabling thinking when a user is
         // actually asking for technical help with a title-generation prompt.
