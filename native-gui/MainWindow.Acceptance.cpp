@@ -102,12 +102,15 @@ IAsyncAction MainWindow::GuiAcceptance() {
           L"GUI 模型載入沒有就緒：" + str(status, L"state") + L" · " + str(status, L"last_error"));
     co_await InvokeButton(L"暫停／恢復接收");
     check(!flag(status, L"accepting", true), L"GUI 沒有暫停接收。");
+    check(!lifecycle->accepting,L"系統匣接收狀態沒有同步。");
     co_await InvokeButton(L"暫停／恢復接收");
     check(flag(status, L"accepting"), L"GUI 沒有恢復接收。");
     co_await InvokeButton(L"保持載入／恢復卸載");
     check(flag(entity(config, L"models", str(config, L"default_model_id")), L"keep_loaded"),
           L"GUI 保持載入沒有保存。");
+    check(lifecycle->keepLoaded && std::wstring_view(overviewState.Text()).find(L"保持載入已開啟")!=std::wstring_view::npos,L"保持載入狀態沒有顯示。");
     co_await InvokeButton(L"保持載入／恢復卸載");
+    check(!lifecycle->keepLoaded,L"系統匣保持載入關閉狀態沒有同步。");
     co_await InvokeButton(L"卸載模型");
     check(str(status, L"state") == L"unloaded", L"GUI 模型卸載沒有完成。");
     auto content = PageHost().Content();

@@ -17,6 +17,7 @@ std::vector<FieldSpec> EditorSchema(hstring collection, JsonObject const &config
         add(L"name", L"顯示名稱", FieldKind::Text, false, 0, 1048576, {}, {});
         add(L"path", L"主模型 GGUF 路徑", FieldKind::Text, false, 0, 1048576, {}, {});
         add(L"context", L"Context（tokens）", FieldKind::Integer, false, 512, 2097152, {}, {});
+        add(L"output_percent", L"輸出預留比例（%，含思考與回答）", FieldKind::Integer, false, 5, 95, {}, {});
         add(L"cpu_threads", L"CPU 執行緒（0 = 自動）", FieldKind::Integer, false, 0, 4096, {}, {});
         add(L"auto_fit", L"自動估算 GPU 層數", FieldKind::Boolean, false, 0, 1048576, {}, {});
         add(L"gpu_layers", L"GPU 層數（-1 = 全部）", FieldKind::Integer, false, -1, 10000, {},
@@ -61,8 +62,6 @@ std::vector<FieldSpec> EditorSchema(hstring collection, JsonObject const &config
                 return str(d, L"budget_mode") == L"custom" &&
                        (str(d, L"thinking_mode") == L"auto" || str(d, L"thinking_mode") == L"on");
             });
-        add(L"max_tokens", L"整次生成上限（思考＋回答）", FieldKind::Integer, false, 256, 1048576,
-            {}, {});
         add(L"agent_sync_mode", L"VS Code Agent 同步", FieldKind::Choice, false, 0, 1048576,
             {L"preserve", L"managed"}, {});
         add(L"agent_description", L"Agent 描述", FieldKind::Text, false, 0, 1048576, {}, {});
@@ -96,7 +95,7 @@ hstring FieldSection(hstring key, hstring collection) {
     if (collection == L"models") {
         if (key == L"name" || key == L"path")
             return L"模型檔案";
-        if (key == L"context" || key == L"cpu_threads" || key == L"auto_fit" ||
+        if (key == L"context" || key == L"output_percent" || key == L"cpu_threads" || key == L"auto_fit" ||
             key == L"gpu_layers" || key == L"fit_target_enabled" || key == L"fit_target_mib" ||
             key == L"cache_type")
             return L"效能與記憶體";
@@ -110,8 +109,8 @@ hstring FieldSection(hstring key, hstring collection) {
         if (key == L"name")
             return L"使用模式";
         if (key == L"thinking_mode" || key == L"reasoning_level" || key == L"budget_mode" ||
-            key == L"thinking_budget" || key == L"max_tokens")
-            return L"思考策略與生成上限";
+            key == L"thinking_budget")
+            return L"思考策略與預算";
         return L"VS Code Agent";
     } else if (collection == L"system") {
         if (key == L"auto_start" || key == L"start_hidden" || key == L"close_to_tray" ||
@@ -121,7 +120,7 @@ hstring FieldSection(hstring key, hstring collection) {
             return L"預設模型行為";
         if (key == L"log_request_bodies" || key == L"log_retention_days")
             return L"紀錄與除錯";
-        return L"引擎與連線";
+        return L"連線與服務";
     }
     return L"";
 }
@@ -149,7 +148,7 @@ hstring FieldHelp(hstring key, hstring collection) {
         return L"需搭配相容的 projector GGUF；勾選並指定路徑後，重新載入才會套用。";
     if (key == L"idle_minutes")
         return L"所有模型共用此閒置時間。0 "
-               L"不自動卸載；手動保持載入時會暫停自動卸載。";
+               L"不自動卸載；手動保持載入時會暫停該模型的自動卸載，不改變此分鐘設定。";
     if (key == L"temperature")
         return L"控制抽樣隨機性；較低偏穩定，較高偏多樣。空白交由客戶端／引擎；明確"
                L"填值會覆蓋請求採樣值，下次請求生效。";

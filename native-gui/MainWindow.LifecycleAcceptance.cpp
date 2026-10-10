@@ -53,8 +53,22 @@ IAsyncAction MainWindow::LifecycleAcceptance() {
     inputs.at(L"context").as<Microsoft::UI::Xaml::Controls::TextBox>().Text(L"4096");
     auto draft = editor;
     co_await Reconnect();
-    check(editor == draft && editor->dirty && editor->Field(L"context").text == L"4096",
-          L"重新連線遺失草稿。");
+    check(editor == draft && editor->Field(L"context").text == L"4096",
+          L"重新連線遺失草稿：same=" + to_hstring(editor == draft) +
+              L"，dirty=" + to_hstring(editor->dirty) + L"，context=" + editor->Field(L"context").text);
+    auto savedConfig = co_await core->Request(L"GET", L"/manager/config");
+    check(editor->dirty || number(entity(savedConfig, L"models", editor->id), L"context") == 4096,
+          L"重連後草稿標記已清除，但修改沒有保存。");
+    // Invalid edits cannot be auto-saved: verify a genuinely unsaved draft too.
+    inputs.at(L"context").as<Microsoft::UI::Xaml::Controls::TextBox>().Text(L"invalid context");
+    SnapshotEditorControls();
+    check(editor->dirty, L"無效編輯沒有建立未保存草稿。");
+    co_await Reconnect();
+    check(editor == draft && editor->dirty && editor->Field(L"context").text == L"invalid context" &&
+              inputs.at(L"context").as<Microsoft::UI::Xaml::Controls::TextBox>().Text() == L"invalid context",
+          L"重連後無效的未保存草稿沒有保留。");
+    check(equal(savedConfig, co_await core->Request(L"GET", L"/manager/config")),
+          L"無效草稿在重連時改動了已保存設定。");
     check(core->process && !core->OwnedExited() &&
               flag(co_await core->Request(L"GET", L"/health"), L"ok"),
           L"服務退出後沒有恢復自有 Core。");

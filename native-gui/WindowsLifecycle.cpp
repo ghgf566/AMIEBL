@@ -158,11 +158,18 @@ LRESULT CALLBACK WindowsLifecycle::Subclass(HWND hwnd, UINT message, WPARAM w, L
                 auto menu = CreatePopupMenu();
                 if (!menu)
                     return 0;
-                wchar_t const *labels[] = {L"開啟主視窗",         L"載入預設模型",
-                                           L"卸載模型",           L"保持載入／恢復卸載",
-                                           L"暫停／恢復接收請求", L"完全結束"};
-                for (int i = 0; i < 6; i++)
-                    AppendMenuW(menu, MF_STRING, i + 1, labels[i]);
+                wchar_t const *labels[] = {L"開啟主視窗",
+                    self->modelLoaded ? L"載入預設模型（已有模型載入）" : L"載入預設模型（尚未載入）",
+                    self->modelBusy ? L"模型載入／卸載中…" : self->modelLoaded ? L"卸載模型" : L"卸載模型（已卸載）",
+                    self->keepLoaded ? L"保持載入：已開啟（點擊恢復自動卸載）" : L"保持載入：已關閉（點擊開啟）",
+                    self->accepting ? L"接受請求：已開啟（點擊暫停）" : L"接受請求：已暫停（點擊恢復）",
+                    L"完全結束"};
+                for (int i = 0; i < 6; i++) {
+                    UINT flags=MF_STRING;
+                    if ((i==3 && self->keepLoaded) || (i==4 && self->accepting)) flags|=MF_CHECKED;
+                    if ((i==1 && self->modelBusy) || (i==2 && (!self->modelLoaded || self->modelBusy))) flags|=MF_GRAYED;
+                    AppendMenuW(menu, flags, i + 1, labels[i]);
+                }
                 POINT point;
                 GetCursorPos(&point);
                 SetForegroundWindow(hwnd);

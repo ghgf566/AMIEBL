@@ -2,7 +2,8 @@
 
 This intentionally executes the old Python code as an oracle, sends identical
 JSON to the new native Rust config-probe, and compares the *entire* result or
-rejection message. No tests may be removed just because the port is difficult.
+rejection message. Explicit v1.1 allocation contract changes are asserted below;
+the frozen reference and all legacy scenarios remain intact.
 
 When the native executable is not built yet the legacy regression pass skips
 this class; the migration CI builds and explicitly reruns it separately.
@@ -32,13 +33,29 @@ class NativeConfigDifferentialTests(unittest.TestCase):
         if not PROBE.is_file():
             self.skipTest("Native Rust probe not compiled; migration CI builds and reruns explicitly.")
 
-    def compare(self, input_config, startup=False):
+    def compare(self, input_config, startup=False, allocation_contract=False,
+                budget_contract=False):
         request = copy.deepcopy(input_config)
         try:
             candidate = legacy.normalize_startup_config(request) if startup else request
             expected = {"ok": True, "result": legacy.validate_config(candidate)}
         except ValueError as exc:
             expected = {"ok": False, "error": str(exc)}
+        if budget_contract:
+            # v1.0 rejected budgets above the profile generation cap. v1.1
+            # validates the budget's own range and clamps it per model/request.
+            self.assertFalse(expected["ok"])
+            self.assertIn("4096", expected["error"])
+            reference_input = copy.deepcopy(input_config)
+            reference_input["profiles"][0]["thinking_budget"] = 0
+            normalized = legacy.validate_config(reference_input)
+            normalized["profiles"][0]["thinking_budget"] = input_config["profiles"][0]["thinking_budget"]
+            expected = {"ok": True, "result": normalized}
+        if allocation_contract:
+            self.assertTrue(expected["ok"])
+            for model in expected["result"]["models"]:
+                self.assertNotIn("output_percent", model)
+                model["output_percent"] = 25
         proc = subprocess.run(
             [str(PROBE)] + (["--startup"] if startup else []),
             input=json.dumps(input_config, ensure_ascii=False),
@@ -132,7 +149,9 @@ class NativeConfigDifferentialTests(unittest.TestCase):
 
                 for label, candidate, startup in scenarios:
                     with self.subTest(label=label):
-                        self.compare(candidate, startup=startup)
+                        self.compare(candidate, startup=startup,
+                            allocation_contract=label in ("model_with_inactive_optional_paths", "repaired_old_disk_context"),
+                            budget_contract=label == "bad_budget")
 
 
 if __name__ == "__main__":

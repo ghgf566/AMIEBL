@@ -29,6 +29,9 @@ UIElement MainWindow::BuildEngines() {
     engineBackend = EngineChoice({{L"auto",L"自動選擇建議套件"},{L"cpu",L"CPU · x64"},{L"cuda12",L"NVIDIA · CUDA 12.4"},{L"cuda13",L"NVIDIA · CUDA 13.4"},{L"sycl",L"Intel · SYCL"},{L"openvino",L"Intel · OpenVINO"},{L"rocm",L"AMD · ROCm / HIP"},{L"vulkan",L"跨廠牌 · Vulkan"}});
     engineUpdate = EngineChoice({{L"notify",L"啟動時檢查並通知"},{L"download",L"自動下載，手動啟用"},{L"auto",L"自動下載，模型卸載後更新"},{L"off",L"僅手動檢查更新"}});
     panel.Children().Append(Row({engineMode,engineChannel}));
+    engineExternalPanel=Panel();
+    engineExternalPanel.Visibility(Visibility::Collapsed);
+    panel.Children().Append(engineExternalPanel);
     panel.Children().Append(Text(L"運算套件與更新方式",12));
     panel.Children().Append(Row({engineBackend,engineUpdate}));
     engineCompatibility = Text(L"硬體相容條件會顯示在這裡。",12); panel.Children().Append(engineCompatibility);
@@ -39,16 +42,12 @@ UIElement MainWindow::BuildEngines() {
     });
     engineCheck = Action(L"檢查更新",[this]{return EngineAction(L"check");});
     panel.Children().Append(Row({engineCheck,engineDownload}));
-    panel.Children().Append(Action(L"停止推理引擎",[this]() -> IAsyncAction {
-        if (!co_await Confirm(L"停止推理引擎？正在執行的任務會取消，模型會卸載，並暫停接受新任務。AMIEBL 會繼續開啟。")) co_return;
-        co_await EngineAction(L"stop");
-    }));
     engineProgress = ProgressBar(); engineProgress.Minimum(0); engineProgress.Maximum(100); engineProgress.Visibility(Visibility::Collapsed); panel.Children().Append(engineProgress);
     engineDownloadText = Text(L"",12); engineDownloadText.Visibility(Visibility::Collapsed); panel.Children().Append(engineDownloadText);
     engineCancel = Action(L"取消下載",[this]{return EngineAction(L"cancel");}); engineCancel.Visibility(Visibility::Collapsed); panel.Children().Append(engineCancel);
     auto advanced = Panel(); engineVersions = ComboBox(); engineVersions.MinWidth(320); advanced.Children().Append(engineVersions);
     advanced.Children().Append(Row({Action(L"啟用選取版本",[this]{return SelectEngine(false);}),Action(L"回滾引擎版本",[this]{return EngineAction(L"rollback");}),Action(L"移除選取版本",[this]{return SelectEngine(true);})}));
-    advanced.Children().Append(Text(L"引擎放在軟體旁的 engines 資料夾。停止後可移除目前版本，也可移除全部版本；刪除最後一個會暫停自動更新。模型與外部引擎會保留。",12));
+    advanced.Children().Append(Text(L"引擎位於軟體旁的 engines 資料夾。移除使用中的版本時會自動停止 server 並取消任務；全部版本均可移除。模型與外部引擎會保留。",12));
     Expander details; details.Header(box_value(L"已安裝版本與還原")); details.Content(advanced); details.HorizontalAlignment(HorizontalAlignment::Stretch); panel.Children().Append(details);
     engineSaveTimer = DispatcherTimer(); engineSaveTimer.Interval(std::chrono::milliseconds(500));
     engineSaveTimer.Tick([weak=get_weak()](auto const &, auto const &) { if(auto self=weak.get()) { self->engineSaveTimer.Stop(); if(self->working) {self->engineSaveTimer.Start(); return;} self->Run([self]{return self->SaveEnginePolicy();}); } });
@@ -84,6 +83,7 @@ IAsyncAction MainWindow::RefreshEngines() {
     engineInfo.Text(message);
     hstring compatible=str(hardware,L"reason");
     auto selectedBackend=Selected(engineBackend); auto catalog=array(result,L"catalog");
+    if(engineExternalPanel) engineExternalPanel.Visibility(Selected(engineMode)==L"external"?Visibility::Visible:Visibility::Collapsed);
     if(selectedBackend!=L"auto") for(auto v : (catalog.Size()?catalog:array(hardware,L"backends"))) {auto o=v.GetObject(); if(str(o,L"id")==selectedBackend) compatible=(flag(o,L"eligible")?L"符合初步硬體條件 · ":L"目前硬體不符合或尚未確認 · ")+str(o,L"reason");}
     if(candidate.Size()) for(auto v : catalog) {auto o=v.GetObject(); if(str(o,L"id")==str(candidate,L"backend") && !str(o,L"toolkit_version").empty()) message=message+L"\n套件執行期  "+str(o,L"id")+L" "+str(o,L"toolkit_version");}
     engineInfo.Text(message);
@@ -130,7 +130,7 @@ IAsyncAction MainWindow::EngineAction(hstring path) {
 }
 IAsyncAction MainWindow::SelectEngine(bool remove) {
     auto id=Selected(engineVersions); if (id.empty()) throw hresult_error(E_FAIL,L"請先選擇已安裝的引擎版本。");
-    if (remove && !co_await Confirm(L"移除選取引擎版本？目前選用的版本需先停止運作；全部版本均可移除，刪除最後一個會暫停自動更新。模型、未知檔案與外部引擎會保留。")) co_return;
+    if (remove && !co_await Confirm(L"移除選取引擎版本？若此版本正在運作，會自動停止 server、取消任務並暫停接收。刪除最後一個會關閉自動更新。模型、未知檔案與外部引擎會保留。")) co_return;
     co_await core->Request(L"POST",remove?L"/manager/engines/remove":L"/manager/engines/activate",body(L"id",JsonValue::CreateStringValue(id)));
     enginePolicyLoaded=false;
     co_await RefreshEngines();
@@ -160,6 +160,10 @@ IAsyncAction MainWindow::EnginesAcceptance() {
     auto result = co_await core->Request(L"GET",L"/manager/engines"); auto policy=object(result,L"policy");
     if (str(policy,L"channel")!=L"preview" || str(policy,L"backend")!=L"cpu" || str(policy,L"mode")!=L"external" || str(policy,L"update")!=L"off" || !flag(policy,L"pinned")) throw hresult_error(E_FAIL,L"引擎介面設定未持久化。");
     if(engineCancel.Visibility()!=Visibility::Collapsed || engineProgress.Visibility()!=Visibility::Collapsed) throw hresult_error(E_FAIL,L"閒置時不應顯示下載操作。");
+    if(engineExternalPanel.Visibility()!=Visibility::Visible || !inputs.count(L"engine_dir")) throw hresult_error(E_FAIL,L"外部模式未顯示引擎路徑。");
+    Select(engineMode,L"managed"); co_await SaveEnginePolicy();
+    if(engineExternalPanel.Visibility()!=Visibility::Collapsed) throw hresult_error(E_FAIL,L"自動管理模式不應顯示外部引擎路徑。");
+    Select(engineMode,L"external"); co_await SaveEnginePolicy();
     for(int i=0;i<30;i++) {
         auto info=co_await core->Request(L"GET",L"/manager/engines");
         if(object(info,L"hardware").Size()) break;

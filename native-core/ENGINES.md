@@ -61,7 +61,7 @@ build tag、套件 URL／官方摘要、版本探測與所有受管檔案摘要�
 | POST | /manager/engines/rollback | 回到 previous |
 | GET | /manager/engines/runtime | 獨立 server 程序、健康與服務狀態 |
 | POST | /manager/engines/stop | 停止 owned server、取消任務並暫停接收 |
-| POST | /manager/engines/remove | 移除版本（目前選用的需先停止）；同 activate 的 id payload |
+| POST | /manager/engines/remove | 移除版本（使用中會自動停止 server）；同 activate 的 id payload |
 
 policy 值：channel=`stable|preview`；backend=`auto|cpu|cuda12|cuda13|sycl|openvino|rocm|vulkan`；
 update=`notify|download|auto|off`；pinned=boolean；mode=`external|managed`。
@@ -95,7 +95,7 @@ Program Files 寫入權限不足時回報錯誤；專用提升權限更新 helpe
 server while keeping AMIEBL running. New tasks are paused; resume accepting tasks
 before using inference again. It never terminates externally owned servers.
 
-The GUI marks the selected version. A selected package can be removed when its
+The GUI marks the selected version. External engine paths appear only in external mode. A selected package can be removed when its
 server and tasks are stopped. Removing the last managed package clears selection
 and disables automatic updates to prevent immediate reinstallation. Unknown files,
 models and external engines remain protected.

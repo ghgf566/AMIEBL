@@ -406,8 +406,14 @@ IAsyncAction MainWindow::Poll() {
         if (page == L"系統" && engineInfo)
             co_await RefreshEngines();
         UpdateFooter();
-        if (lifecycle)
+        if (lifecycle) {
+            lifecycle->modelLoaded = str(status,L"state")==L"ready";
+            lifecycle->modelBusy = str(status,L"state")==L"loading" || str(status,L"state")==L"unloading";
+            auto keepId=str(status,L"model_id",str(config,L"default_model_id"));
+            lifecycle->keepLoaded = flag(entity(config,L"models",keepId),L"keep_loaded");
+            lifecycle->accepting = flag(status,L"accepting",true);
             lifecycle->Update(L"AMIEBL · " + str(status, L"state"));
+        }
         if (!working) {
             auto fresh = co_await core->Request(L"GET", L"/manager/config");
             if (!working && revision == configRevision) {
@@ -415,6 +421,7 @@ IAsyncAction MainWindow::Poll() {
                 configRevision++;
                 if (capabilityText && !selectedModel.empty())
                     capabilityText.Text(ModelCapability(selectedModel));
+                if(editor && editor->collection==L"models") UpdateDependencies();
             }
         }
     } catch (hresult_error const &e) {
@@ -446,6 +453,7 @@ IAsyncAction MainWindow::ToggleKeep() {
                                         !flag(entity(config, L"models", id), L"keep_loaded")));
     co_await core->Request(L"POST", L"/manager/keep-loaded", b);
     config = co_await core->Request(L"GET", L"/manager/config");
+    co_await Poll();
 }
 IAsyncAction MainWindow::ConnectVSCode() {
     if (!(co_await LeaveEditor()))

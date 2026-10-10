@@ -35,9 +35,11 @@ void MainWindow::RestoreNavigation() {
     selecting = false;
 }
 IAsyncOperation<bool> MainWindow::LeaveEditor() {
+    while(editorSaving) { co_await winrt::resume_after(std::chrono::milliseconds(50)); co_await ResumeUI{DispatcherQueue()}; }
     SnapshotEditorControls();
     if (!editor || !editor->dirty)
         co_return true;
+    try { co_await SaveEditor(); co_return true; } catch(hresult_error const &e) { editorSaveState.Text(L"尚未儲存："+e.message()); }
     ContentDialog dialog;
     dialog.XamlRoot(Root().XamlRoot());
     dialog.Title(box_value(L"尚未儲存的修改"));
@@ -95,6 +97,10 @@ void MainWindow::SetStartup(bool enabled) {
     check_hresult(HRESULT_FROM_WIN32(result));
 }
 IAsyncAction MainWindow::SaveEditor() {
+    while(editorSaving) { co_await winrt::resume_after(std::chrono::milliseconds(50)); co_await ResumeUI{DispatcherQueue()}; }
+    editorSaving=true;
+    struct ResetSaving { bool &flag; ~ResetSaving() {flag=false;} } reset{editorSaving};
+    if(editorSaveTimer) editorSaveTimer.Stop();
     SnapshotEditorControls();
     if (!editor)
         throw hresult_error(E_FAIL, L"沒有可儲存的編輯器。");
@@ -131,20 +137,58 @@ IAsyncAction MainWindow::SaveEditor() {
             normalized = normalized + f.spec.label;
         }
     draft->original = clone(persisted);
+    if(draft->dirty) {
+        EditorDraft normalizedDraft(draft->collection,persisted,EditorSchema(draft->collection,config));
+        syncingFields=true;
+        for(auto &field : draft->fields) {
+            bool unchanged=false;
+            try { unchanged=equal(field.Parse(),value(changed,field.spec.key)); } catch(hresult_error const &) {}
+            if(!unchanged) continue;
+            field.text=normalizedDraft.Field(field.spec.key).text;
+            auto control=inputs.at(field.spec.key);
+            if(auto box=control.try_as<TextBox>()) box.Text(field.text);
+            else if(auto check=control.try_as<CheckBox>()) check.IsChecked(field.text==L"true");
+            else if(auto choice=control.try_as<ComboBox>()) for(auto item : choice.Items())
+                if(unbox_value<hstring>(item.as<ComboBoxItem>().Tag())==field.text) choice.SelectedItem(item);
+            initialFieldText[field.spec.key]=field.text;
+            initialControlText[field.spec.key]=control.try_as<TextBox>()?control.as<TextBox>().Text():field.text;
+        }
+        syncingFields=false;
+    }
     // Do not erase edits made while a persistence request was in flight.
     if (!draft->dirty) {
-        if (draft->collection == L"system")
-            ShowPage(L"系統");
-        else {
+        *draft=EditorDraft(draft->collection,persisted,EditorSchema(draft->collection,config));
+        syncingFields=true;
+        for(auto const &field : draft->fields) {
+            auto control=inputs.at(field.spec.key);
+            if(auto box=control.try_as<TextBox>()) box.Text(field.text);
+            else if(auto check=control.try_as<CheckBox>()) check.IsChecked(field.text==L"true");
+            else if(auto choice=control.try_as<ComboBox>()) for(auto item : choice.Items())
+                if(unbox_value<hstring>(item.as<ComboBoxItem>().Tag())==field.text) choice.SelectedItem(item);
+            initialFieldText[field.spec.key]=field.text;
+            initialControlText[field.spec.key]=control.try_as<TextBox>()?control.as<TextBox>().Text():field.text;
+        }
+        syncingFields=false;
+        UpdateDependencies();
+        if(draft->collection!=L"system") {
             PopulateEntities(draft->collection);
-            OpenEditor(draft->collection, draft->id);
             RestoreEntitySelection(draft->collection);
         }
     }
-    if (!savedStatusUnavailable)
+    editorSaveState.Text(draft->dirty?L"等待自動儲存…":L"已自動儲存");
+    UpdateFooter();
+    if (!savedStatusUnavailable && !normalized.empty())
         Message(ApplicationState() +
                 (normalized.empty() ? hstring()
                                     : L"。後端調整了：" + normalized + L"；已顯示實際儲存值。"));
+}
+IAsyncAction MainWindow::AutoSaveEditor() {
+    auto lifetime=get_strong(); auto draft=editor;
+    if(!draft || !draft->dirty) co_return;
+    editorSaveState.Text(L"正在儲存…");
+    try { co_await SaveEditor(); }
+    catch(hresult_error const &e) { if(editor==draft) editorSaveState.Text(L"尚未儲存："+e.message()); }
+    catch(std::exception const &e) { if(editor==draft) editorSaveState.Text(L"尚未儲存："+to_hstring(e.what())); }
 }
 // Windows native file dialogs preserve the existing picker workflow and HWND
 // ownership. Cancellation never changes a draft or invokes a server mutation.

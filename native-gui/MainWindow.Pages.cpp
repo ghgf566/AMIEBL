@@ -22,11 +22,7 @@ UIElement MainWindow::BuildOverview() {
     auto engine = Panel();
     overviewEngine = Text(L"正在讀取 server 狀態…");
     engine.Children().Append(overviewEngine);
-    engine.Children().Append(Row({Action(L"停止推理引擎",[this]() -> IAsyncAction {
-        if (!co_await Confirm(L"停止 server 並取消任務？模型會卸載，接收新任務會暫停；AMIEBL 繼續運作。")) co_return;
-        co_await core->Request(L"POST",L"/manager/engines/stop",JsonObject());
-        co_await Poll();
-    }), Action(L"引擎管理",[this]() -> IAsyncAction { ShowPage(L"系統"); co_return; })}));
+    engine.Children().Append(Action(L"引擎管理",[this]() -> IAsyncAction { ShowPage(L"系統"); co_return; }));
     panel.Children().Append(Card(L"推理引擎 · server",engine));
     Grid metrics;
     metrics.ColumnSpacing(16);
@@ -77,6 +73,10 @@ void MainWindow::UpdateOverview() {
         L"\nPID："+str(engineRuntime,L"pid",L"—")+L" · "+str(engineRuntime,L"url"));
     overviewState.Text(L"狀態：" + Phase(str(status, L"state", L"unloaded")) + L" · " +
                        ApplicationState());
+    auto keepId=str(status,L"model_id",str(config,L"default_model_id"));
+    overviewState.Text(overviewState.Text()+L"\n"+(flag(entity(config,L"models",keepId),L"keep_loaded")
+        ? hstring(L"保持載入已開啟：此模型暫停自動卸載（不改變閒置分鐘設定）。")
+        : L"保持載入已關閉：依閒置卸載設定執行（"+str(config,L"idle_minutes",L"15")+L" 分鐘，0 表示不自動卸載）。"));
     overviewQueue.Text(L"執行中：" + str(status, L"active_count", L"0") + L"\n等待中：" +
                        str(status, L"queued_count", L"0"));
     auto r = object(status, L"resources");
