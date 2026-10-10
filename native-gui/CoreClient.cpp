@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "CoreClient.h"
 #include <chrono>
+#include <shlobj.h>
 #include <winrt/Windows.Storage.Streams.h>
 namespace amiebl {
 using namespace winrt;
@@ -43,9 +44,24 @@ CoreClient::CoreClient() {
         Windows::Web::Http::Filters::HttpCacheWriteBehavior::NoCache);
     http = HttpClient(filter);
     auto dir = Option(L"--data-dir");
-    // Development target must not mutate the supported product's live data.
-    if (dir.empty())
+    if (dir.empty()) {
+#ifdef AMIEBL_RELEASE_BUILD
+        wchar_t executable[32768];
+        GetModuleFileNameW(nullptr, executable, 32768);
+        auto app = std::filesystem::path(executable).parent_path();
+        if (std::filesystem::exists(app / L"portable.flag") &&
+            !std::filesystem::exists(app / L"installed.flag")) {
+            dir = (app / L"data").wstring();
+        } else {
+            wchar_t *local = nullptr;
+            check_hresult(SHGetKnownFolderPath(FOLDERID_LocalAppData, 0, nullptr, &local));
+            dir = (std::filesystem::path(local) / L"LocalModelManager").wstring();
+            CoTaskMemFree(local);
+        }
+#else
         throw hresult_error(E_INVALIDARG, L"原生開發版需指定 --data-dir 隔離資料目錄。");
+#endif
+    }
     dataDir = std::filesystem::absolute(dir);
     if (std::filesystem::exists(dataDir / L"config.json")) {
         std::ifstream f(dataDir / L"config.json");

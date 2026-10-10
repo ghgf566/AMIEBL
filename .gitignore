@@ -34,6 +34,7 @@ dist/
 publish/
 release/
 outputs/
+work/
 portable/
 native-core/target/
 
