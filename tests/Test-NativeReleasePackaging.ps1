@@ -8,6 +8,19 @@ if ($env:CI -ne 'true' -or $env:GITHUB_ACTIONS -ne 'true') {
 }
 $portable = [IO.Path]::GetFullPath($PortableDirectory)
 $setup = [IO.Path]::GetFullPath($SetupExe)
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class NativeReleaseIcons {
+    [DllImport("shell32.dll", CharSet=CharSet.Unicode)]
+    public static extern uint ExtractIconEx(string file, int index, IntPtr large, IntPtr small, uint count);
+}
+'@
+foreach ($executable in @((Join-Path $portable 'LocalModelManager.exe'),$setup)) {
+    if (-not [NativeReleaseIcons]::ExtractIconEx($executable,-1,[IntPtr]::Zero,[IntPtr]::Zero,0)) {
+        throw "Executable has no embedded application icon: $executable"
+    }
+}
 function Test-DefaultStartup([string]$Executable, [string]$DataDirectory) {
     $process = Start-Process -FilePath $Executable -WindowStyle Hidden -PassThru
     try {
