@@ -96,6 +96,23 @@ Required final deployment:
 - Retain legal notices and third-party license texts; release SHA256SUMS, build source commit and clearly written limitations.
 - Freeze **v1.0.0 baseline** in an immutable Git tag; branch only, never delete old tests before equivalent native tests run.
 
+## Approved configuration differences (2026-10-10)
+
+The model allocation slider intentionally changes the normalized v1.1 contract:
+models missing `output_percent` gain 25, including startup migration. Custom
+thinking budgets are validated independently of legacy profile `max_tokens` and
+clamped against the actual model/client output allowance at request time.
+`tests/test_native_config_parity.py` retains every frozen-reference scenario and
+asserts these specific differences explicitly, comparing the entire remaining
+result. The frozen Python reference is unchanged. This does not waive other
+schema or release gates; see `native-core/TOKEN-BUDGET.md`.
+
+GUI recovery acceptance must preserve edited values and editor identity. Valid
+edits may become clean only after verified persistence under autosave; invalid
+unsaved edits must survive reconnection without changing persisted settings.
+Slider acceptance waits for its real UI events, checks both live allowances and
+the persisted percentage, and retains a bounded failure timeout.
+
 ## Completion gates (ALL must pass)
 
 1. **Baseline characterization:** save HTTP golden fixtures and screenshots/recordings from v1.0.0; record behavior for success, failure and cancellation cases.

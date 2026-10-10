@@ -36,8 +36,11 @@ IAsyncAction MainWindow::EditorAcceptance() {
     auto before = editor;
     setText(L"context", L"8192");
     sliders.at(L"output_percent").Value(50);
-    co_await winrt::resume_after(std::chrono::milliseconds(100));
-    co_await ResumeUI{DispatcherQueue()};
+    for (int i = 0; i < 40 && (editor->Field(L"output_percent").text != L"50" ||
+             std::wstring_view(allocationInfo.Text()).find(L"4096 tokens") == std::wstring_view::npos); i++) {
+        co_await winrt::resume_after(std::chrono::milliseconds(25));
+        co_await ResumeUI{DispatcherQueue()};
+    }
     check(editor->Field(L"output_percent").text==L"50" && std::wstring_view(allocationInfo.Text()).find(L"4096 tokens")!=std::wstring_view::npos,L"比例滑桿未換算輸入輸出額度。");
     checked(L"auto_fit", false);
     check(fieldBlocks.at(L"gpu_layers").Visibility() == Visibility::Visible,
@@ -83,6 +86,8 @@ IAsyncAction MainWindow::EditorAcceptance() {
     setText(L"context", L"8192"); co_await SaveEditor();
     auto saved = co_await core->Request(L"GET", L"/manager/config");
     check(number(entity(saved, L"models", modelId), L"context") == 8192, L"Context 沒有保存。");
+    check(number(entity(saved, L"models", modelId), L"output_percent") == 50,
+          L"比例滑桿的修改沒有保存。");
     check(flag(entity(saved, L"models", modelId), L"keep_loaded"), L"覆寫了未編輯的並行欄位。");
     check(flag(object(saved, L"native_editor_unknown"), L"preserve"), L"未知設定遺失。");
     check(value(entity(saved, L"models", modelId), L"temperature").ValueType() ==
