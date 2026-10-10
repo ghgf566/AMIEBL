@@ -49,7 +49,7 @@ class NativeRuntimeIntegration(reference.ManagerIntegration):
                 "model": "test-model", "stream": False,
                 "messages": [
                     {"role": "system", "content": "You are an expert in crafting ultra-compact titles for chatbot conversations. You are presented with a chat request, and you reply with only a brief title that captures the main topic of that request."},
-                    {"role": "user", "content": "Please write a brief title for the following request:\\n\\nAnalyze Rust architecture and debug a race condition"},
+                    {"role": "user", "content": "Please write a brief title for the following request:\n\nAnalyze Rust architecture and debug a race condition"},
                 ],
             })
             reference.eventually(lambda: self.get("/manager/status")["queued_count"] == 1)
