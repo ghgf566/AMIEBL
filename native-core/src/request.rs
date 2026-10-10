@@ -287,11 +287,33 @@ fn classify(body: &Value, record: &mut Value) -> bool {
                 || text.contains("<reminderInstructions>")
                 || text.contains("<conversation-summary>")
                 || text.contains("<attachments>");
+            // Microsoft's Copilot title prompts use this specific system/user
+            // pairing; the quoted initial user task may contain technical keywords.
+            // Do not suppress thinking for ordinary requests merely mentioning titles.
+            let title_request = extracted.is_none()
+                && !ambiguous
+                && [
+                    "Please write a brief title for the following request:",
+                    "Please write a brief title for the following conversation:",
+                    "Please write a brief title for the chat conversation above.",
+                ]
+                .iter()
+                .any(|prefix| text.trim_start().starts_with(prefix))
+                && messages.iter().any(|m| {
+                    m["role"] == "system"
+                        && message_text(m).trim_start().starts_with(
+                            "You are an expert in crafting ultra-compact titles for chatbot conversations.",
+                        )
+                });
             let summary_request = extracted.is_none() && !ambiguous
                 && text.trim_start().starts_with("Summarize the conversation history so far, paying special attention to the most recent agent commands and tool results that triggered this summarization.")
                 && text.contains("Structure your summary using the enhanced format provided in the system message.")
                 && messages.iter().any(|m| m["role"] == "system" && message_text(m).contains("<summary>"));
-            if summary_request {
+            if title_request {
+                kind = "Copilot 對話標題";
+                enabled = false;
+                reason = "關閉思考：已辨識官方標題生成提示格式";
+            } else if summary_request {
                 kind = "Copilot 對話摘要";
                 enabled = false;
                 reason = "關閉思考：已辨識官方摘要提示格式";
@@ -585,6 +607,70 @@ mod allocation_tests {
         let summary = json!({"messages":[{"role":"system","content":"Return <summary> text"},{"role":"user","content":"Summarize the conversation history so far, paying special attention to the most recent agent commands and tool results that triggered this summarization. Structure your summary using the enhanced format provided in the system message."}]});
         assert!(!classify(&summary, &mut record));
         assert_eq!(record["request_kind"], "Copilot 對話摘要");
+    }
+    #[test]
+    fn copilot_title_generation_uses_official_system_and_user_pair() {
+        let system = "You are an expert in crafting ultra-compact titles for chatbot conversations. You are presented with a chat request, and you reply with only a brief title that captures the main topic of that request.";
+        let prefixes = [
+            "Please write a brief title for the following request:",
+            "Please write a brief title for the following conversation:",
+            "Please write a brief title for the chat conversation above.",
+        ];
+        for prefix in prefixes {
+            let mut record = json!({});
+            let body = json!({"messages":[
+                {"role":"system","content":system},
+                {"role":"user","content":format!("{prefix}\n\nAnalyze this Rust architecture and debug a race condition")},
+            ]});
+            assert!(!classify(&body, &mut record), "{prefix}");
+            assert_eq!(record["request_kind"], "Copilot 對話標題");
+            assert_eq!(record["decision"], "自動判斷：Copilot 對話標題；關閉思考：已辨識官方標題生成提示格式");
+        }
+        // Requiring BOTH roles avoids disabling thinking when a user is
+        // actually asking for technical help with a title-generation prompt.
+        let user_only = json!({"messages":[
+            {"role":"user","content":"Please write a brief title for the following request:\n\nAnalyze this Rust architecture"},
+        ]});
+        let mut record = json!({});
+        assert!(classify(&user_only, &mut record));
+        assert_ne!(record["request_kind"], "Copilot 對話標題");
+        let system_only = json!({"messages":[
+            {"role":"system","content":system},
+            {"role":"user","content":"Debug a Rust race condition"},
+        ]});
+        assert!(classify(&system_only, &mut record));
+        assert_ne!(record["request_kind"], "Copilot 對話標題");
+        let wrapped = json!({"messages":[
+            {"role":"system","content":system},
+            {"role":"user","content":"<userRequest>Please write a brief title for the following request: debug Rust</userRequest>"},
+        ]});
+        assert!(classify(&wrapped, &mut record));
+        assert_ne!(record["request_kind"], "Copilot 對話標題");
+
+        let model = json!({
+            "id":"m","context":8192,"output_percent":25,
+            "reasoning_capability":"toggle","reasoning_budget_supported":true,
+            "reasoning_toggle_keys":["enable_thinking"],
+        });
+        let mut profile = json!({
+            "thinking_mode":"auto","reasoning_level":"balanced","budget_mode":"auto",
+        });
+        let title = json!({"model":"m","messages":[
+            {"role":"system","content":system},
+            {"role":"user","content":"Please write a brief title for the following request:\n\nDebug the architecture"},
+        ]});
+        let disabled = policy(&title, &model, &profile, &mut record).unwrap();
+        assert_eq!(disabled["chat_template_kwargs"]["enable_thinking"], false);
+        assert_eq!(record["request_kind"], "Copilot 對話標題");
+        profile["thinking_mode"] = json!("on");
+        let fixed = policy(&title, &model, &profile, &mut record).unwrap();
+        assert_eq!(fixed["chat_template_kwargs"]["enable_thinking"], true);
+        profile["thinking_mode"] = json!("auto");
+        let mut explicit = title.clone();
+        explicit["chat_template_kwargs"] = json!({"enable_thinking":true});
+        let overridden = policy(&explicit, &model, &profile, &mut record).unwrap();
+        assert_eq!(overridden["chat_template_kwargs"]["enable_thinking"], true);
+        assert_eq!(record["decision"], "採用客戶端指定的思考設定");
     }
     #[test]
     fn allocation_scales_and_client_can_only_lower_the_limit() {
