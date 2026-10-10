@@ -29,7 +29,16 @@ struct ControlCommand : implements<ControlCommand, Microsoft::UI::Xaml::Input::I
 };
 MainWindow::MainWindow() {
     InitializeComponent();
+    wchar_t executable[32768];
+    GetModuleFileNameW(nullptr, executable, 32768);
+    auto icon = std::filesystem::path(executable).parent_path() / L"assets" / L"manager.ico";
+    if (std::filesystem::is_regular_file(icon))
+        AppWindow().SetIcon(hstring(icon.wstring()));
+#ifdef AMIEBL_RELEASE_BUILD
+    VersionText().Text(L"v1.1.0");
+#else
     VersionText().Text(L"v1.1.0-dev");
+#endif
     TitleText().Text(L"正在啟動");
     AppWindow().Resize({1240, 860});
     Navigation().RegisterPropertyChangedCallback(

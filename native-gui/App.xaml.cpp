@@ -5,9 +5,15 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <shobjidl.h>
 namespace winrt::AMIEBL::Native::implementation {
 App::App() { InitializeComponent(); }
 void App::OnLaunched(Microsoft::UI::Xaml::LaunchActivatedEventArgs const &) {
+#ifdef AMIEBL_RELEASE_BUILD
+    check_hresult(SetCurrentProcessExplicitAppUserModelID(L"AMIEBL.LocalModelManager"));
+#else
+    check_hresult(SetCurrentProcessExplicitAppUserModelID(L"AMIEBL.Native.Development"));
+#endif
     auto native = winrt::make<MainWindow>();
     window = native;
     window.Activate();

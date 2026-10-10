@@ -73,8 +73,11 @@ IAsyncAction MainWindow::SaveConfig(std::function<void(JsonObject const &)> edit
     UpdateFooter();
 }
 void MainWindow::SetStartup(bool enabled) {
-    // Isolated development builds must not replace the supported v1.0 Run value.
-    // Production key migration remains a packaging acceptance gate.
+#ifdef AMIEBL_RELEASE_BUILD
+    constexpr auto startupName = L"LocalModelManager";
+#else
+    constexpr auto startupName = L"AMIEBL.Native.Development";
+#endif
     HKEY key = nullptr;
     check_hresult(HRESULT_FROM_WIN32(
         RegCreateKeyExW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Run", 0,
@@ -85,11 +88,11 @@ void MainWindow::SetStartup(bool enabled) {
         GetModuleFileNameW(nullptr, exe, 32768);
         std::wstring command =
             L"\"" + std::wstring(exe) + L"\" --data-dir \"" + core->dataDir.wstring() + L"\"";
-        result = RegSetValueExW(key, L"AMIEBL.Native.Development", 0, REG_SZ,
+        result = RegSetValueExW(key, startupName, 0, REG_SZ,
                                 reinterpret_cast<BYTE const *>(command.c_str()),
                                 static_cast<DWORD>((command.size() + 1) * sizeof(wchar_t)));
     } else {
-        result = RegDeleteValueW(key, L"AMIEBL.Native.Development");
+        result = RegDeleteValueW(key, startupName);
         if (result == ERROR_FILE_NOT_FOUND)
             result = ERROR_SUCCESS;
     }
