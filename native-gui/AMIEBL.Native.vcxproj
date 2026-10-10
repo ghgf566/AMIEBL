@@ -112,6 +112,7 @@
       <DependentUpon>MainWindow.xaml</DependentUpon>
     </ClInclude>
     <Manifest Include="app.manifest" />
+    <ResourceCompile Include="Resources.rc" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ItemGroup>

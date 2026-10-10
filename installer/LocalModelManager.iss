@@ -32,6 +32,7 @@ Uninstallable=yes
 ; UninstallDelete rules through Inno Setup's default appended uninstall log.
 UninstallLogMode=overwrite
 UninstallDisplayIcon={app}\manager.ico
+SetupIconFile=..\assets\manager.ico
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -51,7 +52,7 @@ traditionalchinese.MarkerFailure=無法寫入安裝版識別檔。
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Excludes: "\portable.flag,\installed.flag,\data\*,\models\*"; Flags: ignoreversion recursesubdirs
 
 [Icons]
-Name: "{group}\Local Model Manager"; Filename: "{app}\LocalModelManager.exe"; WorkingDir: "{app}"; IconFilename: "{app}\manager.ico"
+Name: "{group}\Local Model Manager"; Filename: "{app}\LocalModelManager.exe"; WorkingDir: "{app}"; IconFilename: "{app}\manager.ico"; AppUserModelID: "AMIEBL.LocalModelManager"
 Name: "{group}\{cm:UninstallName}"; Filename: "{uninstallexe}"
 
 [UninstallDelete]
