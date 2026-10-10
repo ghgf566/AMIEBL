@@ -7,6 +7,9 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  group: native-release-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   native-package:
     runs-on: windows-latest
@@ -26,7 +29,8 @@ jobs:
           $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
           $crt = Get-ChildItem "$vs\VC\Redist\MSVC\*\x64\Microsoft.VC*.CRT" -Directory | Sort-Object FullName -Descending | Select-Object -First 1
           if (-not $crt) { throw 'Redistributable CRT directory missing' }
-          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          $iscc = @("${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe", "${env:ProgramFiles(x86)}\Inno Setup 7\ISCC.exe", "$env:ProgramFiles\Inno Setup 7\ISCC.exe") | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+          if (-not $iscc) { throw 'Inno compiler executable missing' }
           .\package-native.ps1 -OutputDirectory "$env:RUNNER_TEMP\native-release" -VCRuntimeDirectory $crt.FullName -BuildInstaller -IsccPath $iscc
       - name: Verify both installer languages and preserve user files
         shell: pwsh
