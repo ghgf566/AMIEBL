@@ -34,6 +34,12 @@ struct MainWindow : MainWindowT<MainWindow> {
     Microsoft::UI::Xaml::Controls::TextBox logBox{nullptr};
     std::shared_ptr<amiebl::SmoothExpander> serviceLogExpander;
     std::shared_ptr<amiebl::EditorDraft> editor;
+    Microsoft::UI::Xaml::DispatcherTimer editorSaveTimer{nullptr};
+    Microsoft::UI::Xaml::Controls::TextBlock editorSaveState{nullptr};
+    bool editorSaving=false;
+    Microsoft::UI::Xaml::Controls::TextBlock allocationInfo{nullptr};
+    Microsoft::UI::Xaml::Controls::StackPanel engineExternalPanel{nullptr};
+    Windows::Foundation::IAsyncAction AutoSaveEditor();
     Microsoft::UI::Xaml::Controls::ListView entityList{nullptr};
     Microsoft::UI::Xaml::Controls::ContentControl entityEditor{nullptr};
     Microsoft::UI::Xaml::Controls::ScrollViewer editorScroll{nullptr};

@@ -132,7 +132,11 @@ pub fn model_entries(config: &Value) -> Value {
     let mut entries = vec![];
     for model in config["models"].as_array().into_iter().flatten() {
         let context = unsigned(&model["context"], 8192);
-        let output = max_profile.min((context / 4).max(1));
+        let output = if model.get("output_percent").is_some() {
+            crate::request::model_output_limit(model).unwrap_or((context / 4).max(1) as i64) as u64
+        } else {
+            max_profile.min((context / 4).max(1))
+        };
         let input = context.saturating_sub(output).max(1);
         let capability = model.get("reasoning_capability");
         let thinking = if capability.is_some() {
@@ -179,6 +183,23 @@ pub fn preview_at(config: &Value, models_file: &Path, agents_dir: &Path) -> Valu
         .as_array()
         .expect("model_entries always returns a JSON array");
     let profiles = config["profiles"].as_array().cloned().unwrap_or_default();
+    let modern_allocation = config["models"]
+        .as_array()
+        .is_some_and(|models| models.iter().any(|m| m.get("output_percent").is_some()));
+    let allocation_note = if modern_allocation {
+        "輸入／輸出額度依模型 Context 與輸出比例換算，所有 Agent 共用；輸出包含思考與回答，客戶端仍可降低上限。"
+    } else {
+        "VS Code 輸出預留最多為 Context 的四分之一；不修改 Profile 上限。"
+    };
+    let input_warning = if modern_allocation
+        && rows
+            .iter()
+            .any(|m| unsigned(&m["maxInputTokens"], 1) < 4096)
+    {
+        "\n注意：部分模型輸入額度少於 4K，Agent 工具、指令與歷史可能超限。增加 Context 或降低輸出比例可增加輸入空間；此提醒門檻不保證 Agent 可運行。"
+    } else {
+        ""
+    };
     let limits = rows
         .iter()
         .map(|m| {
@@ -217,8 +238,8 @@ pub fn preview_at(config: &Value, models_file: &Path, agents_dir: &Path) -> Valu
         "api_url":format!("http://127.0.0.1:{port}/v1/chat/completions"),
         "models_file":models_file.to_string_lossy(),"agents_dir":agents_dir.to_string_lossy(),
         "default_model_id":config["default_model_id"],"profiles":profile_rows,
-        "summary":format!("將在 VS Code 登錄 {} 個實體模型，並處理 {} 個 Agent。預設同步模式名稱與 AMIEBL 模式標記並保留 VS Code 手動修改；設為完整管理的 Agent 才會由 GUI 覆寫。原始設定會先備份；完成後需要重新載入 VS Code 視窗。\nVS Code 輸出預留最多為 Context 的四分之一；不修改 Profile 上限。\n{}",
-            rows.len(), profiles.len(), limits),
+        "summary":format!("將在 VS Code 登錄 {} 個實體模型，並處理 {} 個 Agent。預設同步模式名稱與 AMIEBL 模式標記並保留 VS Code 手動修改；設為完整管理的 Agent 才會由 GUI 覆寫。原始設定會先備份；完成後需要重新載入 VS Code 視窗。\n{}{}\n{}",
+            rows.len(), profiles.len(), allocation_note, input_warning, limits),
         "message":"VS Code 模型清單只會顯示實體模型；使用模式由 .agent.md 中的 AMIEBL profile 標記選擇。Agent 不固定 customendpoint model，請在 Agent 視窗的模型選擇器選取本機模型。"
     })
 }
@@ -602,6 +623,10 @@ mod tests {
         config["profiles"][0]["max_tokens"] = json!(1048576);
         assert_eq!(model_entries(&config)[0]["maxInputTokens"], 49152);
         assert_eq!(model_entries(&config)[0]["maxOutputTokens"], 16384);
+        config["models"][0]["output_percent"] = json!(50);
+        config["profiles"][0]["max_tokens"] = json!(1);
+        assert_eq!(model_entries(&config)[0]["maxInputTokens"], 32768);
+        assert_eq!(model_entries(&config)[0]["maxOutputTokens"], 32768);
     }
 
     #[test]

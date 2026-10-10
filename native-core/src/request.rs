@@ -30,6 +30,18 @@ static SIMPLE_PATTERNS: LazyLock<Vec<Regex>> = LazyLock::new(|| {
     r"(翻譯|翻成|改寫|潤飾|校對|縮短|換句話說|修正文法|整理格式)",
 ].iter().map(|p| Regex::new(p).unwrap()).collect()
 });
+static TASK_COMPLEX_PATTERNS: LazyLock<Vec<Regex>> = LazyLock::new(|| {
+    COMPLEX_PATTERNS
+        .iter()
+        .map(|p| Regex::new(&p.as_str().replace(r"\\b", r"\b")).unwrap())
+        .collect()
+});
+static TASK_SIMPLE_PATTERNS: LazyLock<Vec<Regex>> = LazyLock::new(|| {
+    SIMPLE_PATTERNS
+        .iter()
+        .map(|p| Regex::new(&p.as_str().replace(r"\\b", r"\b").replace(r"\\s", r"\s")).unwrap())
+        .collect()
+});
 
 fn truthy(v: &Value) -> bool {
     match v {
@@ -194,7 +206,7 @@ pub fn auto_reasoning_budget(level: &str, max_budget: i64) -> i64 {
     ((max_budget as f64 * ratio).round_ties_even() as i64).clamp(0, max_budget)
 }
 
-fn classify(body: &Value, record: &mut Value) -> bool {
+fn classify_legacy(body: &Value, record: &mut Value) -> bool {
     let started = Instant::now();
     record["phase"] = json!("classifying");
     let user_text = body["messages"]
@@ -226,6 +238,111 @@ fn classify(body: &Value, record: &mut Value) -> bool {
     complex || !simple
 }
 
+/// Classify only the task text, never Copilot's surrounding instructions.
+/// Unknown wrappers and tool continuations conservatively keep profile thinking.
+fn classify(body: &Value, record: &mut Value) -> bool {
+    let started = Instant::now();
+    record["phase"] = json!("classifying");
+    let messages = body["messages"]
+        .as_array()
+        .map(Vec::as_slice)
+        .unwrap_or(&[]);
+    let latest = messages.iter().rev().find(|m| {
+        m["role"] == "tool" || (m["role"] == "user" && !message_text(m).trim().is_empty())
+    });
+    let mut kind = "一般請求";
+    let mut reason = "未命中明確規則，沿用模式的思考強度與預算";
+    let mut enabled = true;
+    if let Some(message) = latest {
+        let text = message_text(message);
+        if message["role"] == "tool" || message.get("tool_call_id").is_some() {
+            kind = "工具結果續接";
+            reason = "保留模式思考，避免把工具結果當成使用者問題";
+        } else {
+            // These names are emitted by Microsoft's AgentUserMessage renderer.
+            // Reject ambiguous/repeated/incomplete delimiters rather than guess.
+            let mut extracted = None;
+            let mut ambiguous = false;
+            for tag in ["userRequest", "user_query"] {
+                let open = format!("<{tag}>");
+                let close = format!("</{tag}>");
+                let opens = text.matches(&open).count();
+                let closes = text.matches(&close).count();
+                if opens == 0 && closes == 0 {
+                    continue;
+                }
+                if opens != 1 || closes != 1 || extracted.is_some() {
+                    ambiguous = true;
+                    break;
+                }
+                let start = text.find(&open).unwrap() + open.len();
+                let end = text.find(&close).unwrap();
+                if end < start {
+                    ambiguous = true;
+                    break;
+                }
+                extracted = Some(&text[start..end]);
+            }
+            let wrapped = text.contains("<context>")
+                || text.contains("<reminderInstructions>")
+                || text.contains("<conversation-summary>")
+                || text.contains("<attachments>");
+            let summary_request = extracted.is_none() && !ambiguous
+                && text.trim_start().starts_with("Summarize the conversation history so far, paying special attention to the most recent agent commands and tool results that triggered this summarization.")
+                && text.contains("Structure your summary using the enhanced format provided in the system message.")
+                && messages.iter().any(|m| m["role"] == "system" && message_text(m).contains("<summary>"));
+            if summary_request {
+                kind = "Copilot 對話摘要";
+                enabled = false;
+                reason = "關閉思考：已辨識官方摘要提示格式";
+            } else if ambiguous || (wrapped && extracted.is_none()) {
+                kind = "未確認的包裝／輔助請求";
+                reason = "無法可靠取出使用者問題，沿用模式";
+            } else {
+                if extracted.is_some() {
+                    kind = "Copilot 使用者問題";
+                }
+                let task = extracted
+                    .unwrap_or(&text)
+                    .split_whitespace()
+                    .collect::<Vec<_>>()
+                    .join(" ")
+                    .to_lowercase();
+                // Correct doubled escapes from the frozen legacy classifier.
+                let complex = TASK_COMPLEX_PATTERNS.iter().any(|p| p.is_match(&task));
+                let simple = TASK_SIMPLE_PATTERNS.iter().any(|p| p.is_match(&task));
+                let continuation = messages
+                    .iter()
+                    .rev()
+                    .take_while(|m| !std::ptr::eq(*m, message))
+                    .any(|m| {
+                        m["role"] == "tool"
+                            || m["tool_calls"]
+                                .as_array()
+                                .is_some_and(|calls| !calls.is_empty())
+                    });
+                if continuation {
+                    kind = "工具結果續接";
+                    reason = "保留模式思考以處理工具結果";
+                } else if complex {
+                    reason = "開啟思考：包含分析、技術或推導要求";
+                } else if simple {
+                    enabled = false;
+                    reason = "關閉思考：辨識為問候或單純語言處理";
+                }
+            }
+        }
+    } else {
+        kind = "未確認的請求";
+        reason = "沒有可判斷的使用者文字，沿用模式";
+    }
+    record["request_kind"] = json!(kind);
+    record["decision"] = json!(format!("自動判斷：{kind}；{reason}"));
+    record["classifier_seconds"] =
+        json!((started.elapsed().as_secs_f64() * 10000.0).round_ties_even() / 10000.0);
+    enabled
+}
+
 /// Apply to validated requests and models/profiles from validate_config().
 /// Record changes match policy()/classify(); timing is measured locally.
 pub fn policy(
@@ -236,8 +353,13 @@ pub fn policy(
 ) -> Result<Value, String> {
     let mut body = input.clone();
     body["model"] = model["id"].clone();
-    let mut cap = integer(&p["max_tokens"], "總生成上限", 1, 1048576)?
-        .min((integer(&model["context"], "上下文容量", 512, 2097152)? - 256).max(1));
+    let mut cap = if model.get("output_percent").is_some() {
+        model_output_limit(model)?
+    } else {
+        // Compatibility for callers supplying an unnormalized legacy model.
+        integer(&p["max_tokens"], "總生成上限", 1, 1048576)?
+            .min((integer(&model["context"], "上下文容量", 512, 2097152)? - 256).max(1))
+    };
     for key in ["max_tokens", "max_completion_tokens", "n_predict"] {
         if let Some(v) = body.get(key) {
             cap = cap.min(integer(v, key, 1, 1048576)?);
@@ -346,7 +468,11 @@ pub fn policy(
         return Ok(body);
     }
     let enabled = if mode == "auto" {
-        classify(&body, record)
+        if model.get("output_percent").is_some() {
+            classify(&body, record)
+        } else {
+            classify_legacy(&body, record)
+        }
     } else {
         record["decision"] = json!(if mode == "off" {
             "固定關閉思考"
@@ -410,4 +536,75 @@ pub fn policy(
     record["effort"] = json!(effort);
     record["thinking_budget"] = json!(budget);
     Ok(body)
+}
+
+pub fn model_output_limit(model: &Value) -> Result<i64, String> {
+    let context = integer(&model["context"], "上下文容量", 512, 2097152)?;
+    let percent = integer(
+        model.get("output_percent").unwrap_or(&json!(25)),
+        "輸出預留比例",
+        5,
+        95,
+    )?;
+    Ok((context * percent / 100).max(1))
+}
+
+#[cfg(test)]
+mod allocation_tests {
+    use super::*;
+    #[test]
+    fn task_classifier_isolates_wrappers_and_preserves_uncertain_continuations() {
+        let samples = [
+            ("hello", false), ("translate this sentence", false),
+            ("debug this error", true), ("分析後翻譯", true),
+            ("<context>debug architecture</context><reminderInstructions>analyze code</reminderInstructions><userRequest>hello</userRequest>", false),
+            ("<user_query>translate this</user_query>", false),
+            ("<context>hello</context>", true),
+            ("<userRequest>hello", true),
+            ("<userRequest>hello</userRequest><userRequest>translate</userRequest>", true),
+            ("please summarize this conversation", true),
+        ];
+        for (text, expected) in samples {
+            let mut record = json!({});
+            assert_eq!(
+                classify(
+                    &json!({"messages":[{"role":"user","content":text}]}),
+                    &mut record
+                ),
+                expected,
+                "{text}"
+            );
+            assert!(record["request_kind"].is_string());
+        }
+        let mut record = json!({});
+        assert!(classify(
+            &json!({"messages":[{"role":"user","content":"<userRequest>hello</userRequest>"},{"role":"assistant","tool_calls":[{"id":"t"}]},{"role":"tool","tool_call_id":"t","content":"translate this"}]}),
+            &mut record
+        ));
+        assert_eq!(record["request_kind"], "工具結果續接");
+        let summary = json!({"messages":[{"role":"system","content":"Return <summary> text"},{"role":"user","content":"Summarize the conversation history so far, paying special attention to the most recent agent commands and tool results that triggered this summarization. Structure your summary using the enhanced format provided in the system message."}]});
+        assert!(!classify(&summary, &mut record));
+        assert_eq!(record["request_kind"], "Copilot 對話摘要");
+    }
+    #[test]
+    fn allocation_scales_and_client_can_only_lower_the_limit() {
+        let mut model = json!({"id":"m","context":4096,"output_percent":50});
+        let profile = json!({"max_tokens":1,"thinking_mode":"off","budget_mode":"auto","reasoning_level":"light"});
+        let mut record = json!({});
+        let request = json!({"model":"m","messages":[]});
+        assert_eq!(
+            policy(&request, &model, &profile, &mut record).unwrap()["max_tokens"],
+            2048
+        );
+        model["context"] = json!(65536);
+        assert_eq!(model_output_limit(&model).unwrap(), 32768);
+        let request =
+            json!({"model":"m","messages":[],"max_tokens":1000,"max_completion_tokens":800});
+        assert_eq!(
+            policy(&request, &model, &profile, &mut record).unwrap()["max_tokens"],
+            800
+        );
+        model["output_percent"] = json!(100);
+        assert!(model_output_limit(&model).is_err());
+    }
 }

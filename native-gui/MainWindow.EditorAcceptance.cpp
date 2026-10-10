@@ -31,10 +31,14 @@ IAsyncAction MainWindow::EditorAcceptance() {
     auto modelId = str(config, L"default_model_id");
     ShowPage(L"模型庫");
     Root().UpdateLayout();
-    check(inputs.size() == 20, L"模型欄位規格不完整。");
+    check(inputs.size() == 21, L"模型欄位規格不完整。");
     check(!editor->dirty, L"初始模型草稿不應是未保存。");
     auto before = editor;
     setText(L"context", L"8192");
+    sliders.at(L"output_percent").Value(50);
+    co_await winrt::resume_after(std::chrono::milliseconds(100));
+    co_await ResumeUI{DispatcherQueue()};
+    check(editor->Field(L"output_percent").text==L"50" && std::wstring_view(allocationInfo.Text()).find(L"4096 tokens")!=std::wstring_view::npos,L"比例滑桿未換算輸入輸出額度。");
     checked(L"auto_fit", false);
     check(fieldBlocks.at(L"gpu_layers").Visibility() == Visibility::Visible,
           L"手動 GPU 層數沒有顯示。");
@@ -43,6 +47,14 @@ IAsyncAction MainWindow::EditorAcceptance() {
     check(fieldBlocks.at(L"fit_target_mib").Visibility() == Visibility::Visible,
           L"自訂預留記憶體沒有顯示。");
     checked(L"mtp", true);
+    {
+        auto model=entity(config,L"models",modelId);
+        for(auto value : inputs.at(L"mtp_source").as<ComboBox>().Items()) {
+            auto item=value.as<ComboBoxItem>();
+            if(unbox_value<hstring>(item.Tag())==L"native")
+                check(item.IsEnabled()==(str(model,L"mtp_capability")==L"available"),L"內建 MTP 選項未依模型能力限制。");
+        }
+    }
     choose(L"mtp_source", L"external");
     check(fieldBlocks.at(L"mtp_draft_path").Visibility() == Visibility::Visible,
           L"Draft 路徑沒有顯示。");
@@ -64,7 +76,11 @@ IAsyncAction MainWindow::EditorAcceptance() {
     concurrentModel.SetNamedValue(L"keep_loaded", JsonValue::CreateBooleanValue(true));
     replace_entity(concurrent, L"models", concurrentModel);
     co_await core->Request(L"PUT", L"/manager/config", concurrent);
-    co_await InvokeButton(L"儲存設定");
+    co_await SaveEditor();
+    setText(L"context", L"8193");
+    co_await resume_after(std::chrono::milliseconds(1400)); co_await ResumeUI{DispatcherQueue()};
+    check(!editor->dirty && editorSaveState.Text()==L"已自動儲存", L"設定未自動儲存。");
+    setText(L"context", L"8192"); co_await SaveEditor();
     auto saved = co_await core->Request(L"GET", L"/manager/config");
     check(number(entity(saved, L"models", modelId), L"context") == 8192, L"Context 沒有保存。");
     check(flag(entity(saved, L"models", modelId), L"keep_loaded"), L"覆寫了未編輯的並行欄位。");
@@ -84,7 +100,7 @@ IAsyncAction MainWindow::EditorAcceptance() {
     co_await core->Request(L"PUT", L"/manager/config", concurrent);
     bool conflict = false;
     try {
-        co_await InvokeButton(L"儲存設定");
+        co_await SaveEditor();
     } catch (hresult_error const &e) {
         conflict = std::wstring(e.message()).find(L"草稿仍保留") != std::wstring::npos;
     }
@@ -103,7 +119,7 @@ IAsyncAction MainWindow::EditorAcceptance() {
     setText(L"context", L"511");
     bool invalid = false;
     try {
-        co_await InvokeButton(L"儲存設定");
+        co_await SaveEditor();
     } catch (hresult_error const &) {
         invalid = true;
     }
@@ -121,7 +137,7 @@ IAsyncAction MainWindow::EditorAcceptance() {
     co_await ResumeUI{DispatcherQueue()};
     co_await InvokeButton(L"捨棄修改");
     check(page == L"使用模式", L"捨棄沒有切換頁面。");
-    check(inputs.size() == 10, L"模式欄位規格不完整。");
+    check(inputs.size() == 9 && !inputs.count(L"max_tokens"), L"模式仍顯示總生成上限。");
     auto profileId = editor->id;
     setText(L"name", L"\u3000ÉTUDE 測試模式\u00a0");
     choose(L"thinking_mode", L"on");
@@ -129,13 +145,12 @@ IAsyncAction MainWindow::EditorAcceptance() {
     check(fieldBlocks.at(L"thinking_budget").Visibility() == Visibility::Visible,
           L"自訂預算没有顯示。");
     setText(L"thinking_budget", L"64");
-    setText(L"max_tokens", L"4096");
     setText(L"agent_tools", L"\u3000web\u00a0, read, \u3000, edit");
     setText(L"agent_instructions", L"保留使用者指令\n第二行");
     Navigation().SelectedItem(Navigation().MenuItems().GetAt(4));
     co_await resume_after(std::chrono::milliseconds(250));
     co_await ResumeUI{DispatcherQueue()};
-    co_await InvokeButton(L"儲存");
+    for(int i=0;i<100 && working;i++) { co_await resume_after(std::chrono::milliseconds(50)); co_await ResumeUI{DispatcherQueue()}; }
     check(page == L"系統", L"保存草稿沒有切頁。");
     saved = co_await core->Request(L"GET", L"/manager/config");
     auto profile = entity(saved, L"profiles", profileId);
@@ -148,7 +163,7 @@ IAsyncAction MainWindow::EditorAcceptance() {
     setText(L"idle_minutes", L"7");
     setText(L"model_dirs", hstring(core->dataDir.wstring()) + L"\n  \n");
     checked(L"log_request_bodies", true);
-    co_await InvokeButton(L"儲存設定");
+    co_await SaveEditor();
     saved = co_await core->Request(L"GET", L"/manager/config");
     check(number(saved, L"idle_minutes") == 7 && array(saved, L"model_dirs").Size() == 1 &&
               flag(saved, L"log_request_bodies"),

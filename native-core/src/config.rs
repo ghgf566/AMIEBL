@@ -73,7 +73,7 @@ pub fn default_config() -> Value {
         models.push(json!({
             "id": "local-model", "name": model_name,
             "path": path.to_string_lossy(), "mmproj": projector_path,
-            "vision": !projector_path.is_empty(), "context": 8192,
+            "vision": !projector_path.is_empty(), "context": 8192, "output_percent":25,
             "gpu_layers": 0, "auto_fit": true,
             "fit_target_enabled": false, "fit_target_mib": 2048,
             "cache_type": "f16", "cpu_threads": 0, "native_context": 0,
@@ -253,20 +253,9 @@ fn validate_profile(value: &mut Value) -> ValidationResult<()> {
         return Err("無效的思考預算模式。".into());
     }
     p.entry("thinking_budget").or_insert(json!(1536));
+    p.entry("max_tokens").or_insert(json!(4096)); // Retained legacy metadata, not the model allocation.
     check_number(&p["max_tokens"], "總生成上限", 1., 1048576., true)?;
     check_number(&p["thinking_budget"], "思考預算", 0., 1048576., true)?;
-    if p["budget_mode"] == "custom" && (p["thinking_mode"] == "auto" || p["thinking_mode"] == "on")
-    {
-        let cap = p["max_tokens"].as_f64().unwrap_or(0.0) as u64;
-        let reserve = u64::min(256, u64::max(1, cap / 4));
-        if (p["thinking_budget"].as_f64().unwrap_or(f64::INFINITY) as u64)
-            > cap.saturating_sub(reserve)
-        {
-            return Err(format!(
-                "自訂思考預算過高；總生成上限 {cap} 至少需保留 {reserve} tokens 給回答與工具呼叫。"
-            ));
-        }
-    }
     if !allowed(&p["agent_sync_mode"], &["preserve", "managed"]) {
         return Err("無效的 VS Code Agent 同步方式。".into());
     }
@@ -341,7 +330,7 @@ fn validate_model(
         }));
     }
     let defaults = json!({
-        "mmproj":"","vision":false,"context":8192,"gpu_layers":0,"auto_fit":true,
+        "mmproj":"","vision":false,"context":8192,"output_percent":25,"gpu_layers":0,"auto_fit":true,
         "fit_target_enabled":false,"fit_target_mib":2048,"cache_type":"f16",
         "cpu_threads":0,"native_context":0,"mtp":false,"mtp_source":"native",
         "mtp_draft_path":"","mtp_draft_max":null,"mtp_capability":"unknown","mtp_layers":0,
@@ -377,6 +366,7 @@ fn validate_model(
     }
     for (key, name, min, max) in [
         ("context", "上下文容量", 512., 2097152.),
+        ("output_percent", "輸出預留比例", 5., 95.),
         ("native_context", "模型原生上下文", 0., 2097152.),
         ("cpu_threads", "CPU 執行緒上限", 0., 4096.),
         ("gpu_layers", "GPU 層數", -1., 999.),
@@ -662,5 +652,16 @@ mod tests {
         assert_eq!(out["models"][0]["custom_external_field"], "retained");
         assert_eq!(out["models"][0]["mmproj"], "C:/projector.gguf");
         assert_eq!(out["models"][0]["mtp_draft_path"], "C:/draft.gguf");
+        assert_eq!(out["models"][0]["output_percent"], 25);
+        let mut invalid = out.clone();
+        invalid["models"][0]["output_percent"] = json!(96);
+        assert!(validate_config(invalid).is_err());
+        let mut manual = out;
+        manual["models"][0]["output_percent"] = json!(50);
+        manual["profiles"][0]["max_tokens"] = json!(256);
+        manual["profiles"][0]["thinking_mode"] = json!("on");
+        manual["profiles"][0]["budget_mode"] = json!("custom");
+        manual["profiles"][0]["thinking_budget"] = json!(1024);
+        assert!(validate_config(manual).is_ok()); // Legacy mode caps do not govern model allocations.
     }
 }

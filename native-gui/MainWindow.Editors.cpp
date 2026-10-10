@@ -158,6 +158,7 @@ void MainWindow::EditField(hstring key, hstring text) {
     if (initialControlText.count(key) && text == initialControlText.at(key))
         text = initialFieldText.at(key);
     editor->Edit(key, text);
+    if(editorSaveTimer) { editorSaveTimer.Stop(); if(editor->dirty) { editorSaveState.Text(L"等待自動儲存…"); editorSaveTimer.Start(); } }
     UpdateFooter();
     UpdateDependencies();
     auto it = sliders.find(key);
@@ -166,7 +167,7 @@ void MainWindow::EditField(hstring key, hstring text) {
             auto n = editor->Field(key).Parse();
             if (n.ValueType() != JsonValueType::Number)
                 return;
-            bool log = key != L"cpu_threads";
+            bool log = key != L"cpu_threads" && key != L"output_percent";
             double p = log ? std::log2(std::max(1.0, n.GetNumber())) : n.GetNumber();
             syncingFields = true;
             it->second.Value(std::clamp(p, it->second.Minimum(), it->second.Maximum()));
@@ -179,10 +180,32 @@ void MainWindow::UpdateDependencies() {
     if (!editor)
         return;
     auto preview = editor->Preview();
+    if(editor->collection==L"models" && allocationInfo) {
+        auto context=static_cast<int64_t>(number(preview,L"context"));
+        auto percent=static_cast<int64_t>(number(preview,L"output_percent"));
+        if(context>=512 && percent>=5 && percent<=95) {
+            auto output=context*percent/100;
+            allocationInfo.Text(L"輸入 "+to_hstring(100-percent)+L"% · "+to_hstring(context-output)+L" tokens　／　輸出 "+to_hstring(percent)+L"% · "+to_hstring(output)+L" tokens（含 Thinking）\n輸入包含工具、指令與對話歷史。改變分配後請同步至 VS Code；客戶端仍可要求更低輸出上限。");
+            if (context-output < 4096) {
+                allocationInfo.Text(allocationInfo.Text() + L"\n注意：輸入額度少於 4K，VS Code Agent 的工具定義、指令與歷史可能超限。可增加 Context 或減少輸出比例；4K 是提醒門檻，並非保證可運行的最低值。");
+            }
+        } else allocationInfo.Text(L"請輸入有效 Context 與 5–95% 的輸出比例。");
+    }
     for (auto const &f : editor->fields)
         if (f.spec.enabled && fieldBlocks.count(f.spec.key))
             fieldBlocks.at(f.spec.key)
                 .Visibility(f.spec.enabled(preview) ? Visibility::Visible : Visibility::Collapsed);
+    if(editor->collection==L"models" && inputs.count(L"mtp_source")) {
+        auto model=entity(config,L"models",editor->id);
+        bool available=str(model,L"mtp_capability")==L"available" && str(preview,L"path")==str(model,L"path");
+        for(auto value : inputs.at(L"mtp_source").as<ComboBox>().Items()) {
+            auto item=value.as<ComboBoxItem>();
+            if(unbox_value<hstring>(item.Tag())==L"native") {
+                item.IsEnabled(available);
+                item.Content(box_value(available?L"模型內建":L"模型內建（未偵測到支援）"));
+            }
+        }
+    }
 }
 static hstring ChoiceLabel(hstring key, hstring id, JsonObject const &config) {
     if (key == L"default_profile_id")
@@ -202,6 +225,16 @@ static hstring ChoiceLabel(hstring key, hstring id, JsonObject const &config) {
     return labels.count(key) && labels[key].count(id) ? labels[key][id] : id;
 }
 UIElement MainWindow::BuildForm(std::shared_ptr<EditorDraft> draft) {
+    allocationInfo=nullptr;
+    if(editorSaveTimer) editorSaveTimer.Stop();
+    editorSaveTimer=DispatcherTimer(); editorSaveTimer.Interval(std::chrono::milliseconds(800));
+    editorSaveTimer.Tick([weak=get_weak()](auto const &,auto const &) {
+        if(auto self=weak.get()) {
+            self->editorSaveTimer.Stop();
+            if(self->working || self->editorSaving) { self->editorSaveTimer.Start(); return; }
+            self->AutoSaveEditor();
+        }
+    });
     inputs.clear();
     initialFieldText.clear();
     initialControlText.clear();
@@ -211,7 +244,6 @@ UIElement MainWindow::BuildForm(std::shared_ptr<EditorDraft> draft) {
     auto panel = Panel();
     if (draft->collection == L"system") {
         panel.Children().Append(BuildEngines());
-        panel.Children().Append(Action(L"檢查連線", [this] { return CheckConnection(); }));
         panel.Children().Append(Text(L"資料位置：" + hstring(core->dataDir.wstring()), 12));
     }
     if (draft->collection == L"models") {
@@ -299,22 +331,30 @@ UIElement MainWindow::BuildForm(std::shared_ptr<EditorDraft> draft) {
                                            }));
         }
         if (key == L"context" || key == L"cpu_threads" || key == L"thinking_budget" ||
-            key == L"max_tokens") {
-            bool logarithmic = key != L"cpu_threads";
-            double minimum = key == L"context" ? 512 : key == L"max_tokens" ? 256 : 0;
+            key == L"output_percent") {
+            bool logarithmic = key != L"cpu_threads" && key != L"output_percent";
+            double minimum = key == L"context" ? 512 : key == L"output_percent" ? 5 : 0;
             double nativeContext = number(entity(config, L"models", draft->id), L"native_context");
             SYSTEM_INFO sys{};
             GetSystemInfo(&sys);
             double maximum =
                 key == L"context"
                     ? (nativeContext > 0 ? std::clamp(nativeContext, 512.0, 2097152.0) : 2097152)
+                : key == L"output_percent" ? 95
                 : key == L"cpu_threads" ? std::max(1ul, sys.dwNumberOfProcessors)
                                         : 1048576;
             Slider slider;
             slider.Minimum(logarithmic ? std::log2(std::max(1.0, minimum)) : minimum);
             slider.Maximum(logarithmic ? std::log2(maximum) : maximum);
             slider.StepFrequency(1);
-            slider.Header(box_value(L"快速調整"));
+            if (key == L"output_percent") {
+                auto allocationLabel = Text(L"輸入 ← 比例分配 → 輸出", 12);
+                allocationLabel.HorizontalAlignment(HorizontalAlignment::Stretch);
+                allocationLabel.TextAlignment(TextAlignment::Center);
+                block.Children().Append(allocationLabel);
+            } else {
+                slider.Header(box_value(L"快速調整"));
+            }
             slider.HorizontalAlignment(HorizontalAlignment::Stretch);
             Microsoft::UI::Xaml::Automation::AutomationProperties::SetName(slider,
                                                                            spec.label + L"滑桿");
@@ -337,6 +377,7 @@ UIElement MainWindow::BuildForm(std::shared_ptr<EditorDraft> draft) {
             });
             sliders[key] = slider;
             block.Children().Append(slider);
+            if(key==L"output_percent") { allocationInfo=Text(L"",12); block.Children().Append(allocationInfo); }
         }
         auto hint = FieldHelp(key, draft->collection);
         if (!hint.empty()) {
@@ -344,9 +385,14 @@ UIElement MainWindow::BuildForm(std::shared_ptr<EditorDraft> draft) {
             help.Opacity(.72);
             block.Children().Append(help);
         }
+        if(draft->collection==L"system" && key==L"engine_dir") {
+            engineExternalPanel.Children().Append(block);
+            continue;
+        }
         auto title = FieldSection(key, draft->collection);
         if (!sections.count(title)) {
             auto section = Panel();
+            if(draft->collection==L"system" && title==L"連線與服務") section.Children().Append(Action(L"檢查連線",[this]{return CheckConnection();}));
             sections[title] = section;
             if (title == L"進階採樣" || title == L"VS Code Agent") {
                 auto e = SmoothExpander::Create(title, section);
@@ -390,21 +436,8 @@ UIElement MainWindow::BuildForm(std::shared_ptr<EditorDraft> draft) {
         sections.at(title).Children().Append(block);
     }
     UpdateDependencies();
-    auto save = Row({Action(L"儲存設定", [this] { return SaveEditor(); }),
-                     Action(L"重新讀取", [this, draft]() -> IAsyncAction {
-                         if (editor && editor->dirty &&
-                             !(co_await Confirm(L"捨棄尚未儲存的修改，重新讀取已保存設定？")))
-                             co_return;
-                         auto fresh = co_await core->Request(L"GET", L"/manager/config");
-                         config = fresh;
-                         if (draft->collection == L"system")
-                             ShowPage(L"系統");
-                         else {
-                             PopulateEntities(draft->collection);
-                             OpenEditor(draft->collection, draft->id);
-                             RestoreEntitySelection(draft->collection);
-                         }
-                     })});
+    editorSaveState=Text(L"設定會自動儲存",12);
+    auto save=Row({editorSaveState});
     if (draft->collection == L"models")
         panel.Children().Append(
             Row({Action(L"載入／重新載入",

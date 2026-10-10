@@ -12,6 +12,7 @@ struct WindowsLifecycle {
     std::thread listener;
     std::function<void(int)> action;
     bool primary = false, tray = false;
+    bool modelLoaded = false, modelBusy = false, keepLoaded = false, accepting = true;
     HICON icon{};
     UINT taskbarCreated{};
     static constexpr UINT TrayMessage = WM_APP + 61;

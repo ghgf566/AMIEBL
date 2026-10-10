@@ -132,6 +132,11 @@ class EngineManagerTests(unittest.TestCase):
         unknown.unlink()
         self.api("POST", "/remove", {"id": inactive})
         self.assertFalse(unknown.parent.exists())
+        remaining = self.api("GET")["active"]
+        removed = self.api("POST", "/remove", {"id": remaining})
+        self.assertEqual(removed["packages"], [])
+        self.assertIsNone(removed["active"])
+        self.assertEqual(removed["policy"]["update"], "off")
         evidence = os.environ.get("AMIEBL_ENGINE_EVIDENCE")
         if evidence:
             Path(evidence).write_text(json.dumps(self.api("GET"), ensure_ascii=False, indent=2), encoding="utf-8")

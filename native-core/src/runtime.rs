@@ -2113,19 +2113,39 @@ async fn engine_remove(State(m): State<Arc<Manager>>, Json(body): Json<Value>) -
     let id = body["id"]
         .as_str()
         .ok_or_else(|| "Missing package id".to_owned())?;
-    let _lifecycle = m.lifecycle.lock().await;
-    let mut inner = m.inner.lock().await;
+    let directory = m.engines.directory(id).await?;
     let current = m.engines.status().await;
-    if current["active"] == id
-        && (!inner.tickets.is_empty()
-            || inner.process.is_some()
-            || matches!(inner.state, "loading" | "unloading"))
-    {
-        return Err(ApiError::detail(
-            409,
-            "引擎仍在運作；請先停止推理引擎，再移除此版本。",
-        ));
+    let selected = current["active"] == id && current["policy"]["mode"] == "managed";
+    if selected {
+        if let Some(cancel) = &m.inner.lock().await.load_cancel {
+            cancel.cancel();
+        }
     }
+    let _lifecycle = m.lifecycle.lock().await;
+    let tickets = {
+        let mut inner = m.inner.lock().await;
+        let owns_target = inner
+            .loaded
+            .as_ref()
+            .is_some_and(|loaded| loaded["engine_dir"] == json!(directory));
+        if selected || owns_target {
+            inner.accepting = false;
+            inner.state = "unloading";
+            Some(inner.tickets.values().cloned().collect::<Vec<_>>())
+        } else {
+            None
+        }
+    };
+    if let Some(tickets) = tickets {
+        for ticket in tickets {
+            m.cancel(ticket).await;
+        }
+        m.stop_child().await;
+        let mut inner = m.inner.lock().await;
+        inner.state = "unloaded";
+        inner.deferred_unload = false;
+    }
+    let mut inner = m.inner.lock().await;
     let result = m.engines.remove(id).await?;
     inner.managed_engine_dir = m.engines.active_directory().await?;
     Ok(Json(result))
