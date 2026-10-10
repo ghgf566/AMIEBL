@@ -45,7 +45,13 @@ class NativeRuntimeIntegration(reference.ManagerIntegration):
         with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
             first = pool.submit(self.completion, "hello", True)
             reference.eventually(lambda: self.get("/manager/status")["active_count"] == 1)
-            title = pool.submit(self.completion, "Generate a short title for this conversation", False)
+            title = pool.submit(self.client.post, "/v1/chat/completions", json={
+                "model": "test-model", "stream": False,
+                "messages": [
+                    {"role": "system", "content": "You are an expert in crafting ultra-compact titles for chatbot conversations. You are presented with a chat request, and you reply with only a brief title that captures the main topic of that request."},
+                    {"role": "user", "content": "Please write a brief title for the following request:\\n\\nAnalyze Rust architecture and debug a race condition"},
+                ],
+            })
             reference.eventually(lambda: self.get("/manager/status")["queued_count"] == 1)
             self.assertEqual(first.result(timeout=20).status_code, 200)
             self.assertEqual(title.result(timeout=20).status_code, 200)
@@ -59,9 +65,11 @@ class NativeRuntimeIntegration(reference.ManagerIntegration):
         self.assertEqual(summary.status_code, 200, summary.text)
         self.assertEqual(len(self.events("start")), 1)
         self.assertEqual(len(self.events("post")), 3)
+        self.assertFalse(self.events("post")[1]["body"]["chat_template_kwargs"]["enable_thinking"])
         self.assertFalse(self.events("post")[-1]["body"]["chat_template_kwargs"]["enable_thinking"])
         records = reference.eventually(lambda: self.records() if len(self.records()) == 3 and all(r["phase"] == "completed" for r in self.records()) else None)
         self.assertEqual(len(records), 3)
+        self.assertIn("Copilot 對話標題", [r["request_kind"] for r in records])
         starts = self.events("start")
         slot_index = starts[0]["argv"].index("-np")
         self.assertEqual(starts[0]["argv"][slot_index + 1], "1")
