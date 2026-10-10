@@ -16,3 +16,15 @@ Evidence was collected locally under `local-handoff/logs/five-failures-final/`.
 
 This resolves the five listed failures, not all release gates. It does not claim
 manual UI parity, clean-machine installation, or all-GPU/model acceptance.
+
+## Follow-up GitHub regression
+
+Run `38018638193` on `492eac7` passed the config and GUI checks above but failed
+five inherited native-runtime assertions: four expected the old classifier display
+strings, and one expected the old profile cap of 4096 instead of 8192 * 25% = 2048.
+The native-runtime subclass now explicitly overrides those five scenarios with
+the approved native expectations, retaining transport, single-inference, timing,
+thinking controls, answer-space and stricter-client-limit assertions. Neither
+`test_manager_integration.py` nor the Python backend was changed. All five targeted
+runtime tests passed locally in 6.308 seconds. A new remote run is required to
+confirm the complete CI result.
