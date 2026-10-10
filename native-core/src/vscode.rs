@@ -187,7 +187,7 @@ pub fn preview_at(config: &Value, models_file: &Path, agents_dir: &Path) -> Valu
         .as_array()
         .is_some_and(|models| models.iter().any(|m| m.get("output_percent").is_some()));
     let allocation_note = if modern_allocation {
-        "輸入／輸出額度依模型 Context 與輸出比例換算，所有 Agent 共用；輸出包含思考與回答，客戶端仍可降低上限。"
+        "輸入／輸出額度依模型 Context 與輸出比例換算，所有 Agent 共用；輸出包含思考與回答，客戶端仍可降低上限。\nVS Code 背景標題／摘要：在使用者設定將 chat.byokUtilityModelDefault 設為 mainAgent，並在對話選取本機模型。chat.utilityModel 與 chat.utilitySmallModel 的明確選擇優先於此預設；請在 VS Code 設定的模型選擇器確認它們。同步模型清單不會改寫這些使用者設定。"
     } else {
         "VS Code 輸出預留最多為 Context 的四分之一；不修改 Profile 上限。"
     };
@@ -599,6 +599,30 @@ mod tests {
                          "agent_instructions":"Write code.",
                          "agent_description":"Coding","agent_sync_mode":"preserve"}]
         })
+    }
+
+    #[test]
+    fn modern_preview_explains_utility_routing_without_changing_user_settings() {
+        let root = tempfile::tempdir().unwrap();
+        let models = root.path().join("chatLanguageModels.json");
+        let settings = root.path().join("settings.json");
+        let original =
+            "{ // retain explicit utility choice\n\"chat.utilityModel\":\"other/model\"\n}";
+        fs::write(&settings, original).unwrap();
+        let mut config = fixture();
+        config["models"][0]["output_percent"] = json!(25);
+        let preview = preview_at(&config, &models, &root.path().join("agents"));
+        let summary = preview["summary"].as_str().unwrap();
+        for key in [
+            "chat.byokUtilityModelDefault",
+            "mainAgent",
+            "chat.utilityModel",
+            "chat.utilitySmallModel",
+        ] {
+            assert!(summary.contains(key));
+        }
+        apply_at(&config, root.path(), &models, &root.path().join("agents")).unwrap();
+        assert_eq!(fs::read_to_string(settings).unwrap(), original);
     }
 
     #[test]
